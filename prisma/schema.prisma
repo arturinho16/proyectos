@@ -44,7 +44,7 @@ datasource db {
   telefono          String?
   celular           String?
   tipoPersona       String?  // Fisica o Moral
-
+  facturas          Factura[]
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -74,8 +74,92 @@ model Product {
   cuentaPredial    String?  // Para bienes inmuebles
   numeroPedimento  String?  // Información aduanera
   impuestoLocal    Decimal? @db.Decimal(5, 4) // Tasa de impuesto local si aplica
-
+  onceptosFactura  ConceptoFactura[]
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+// 3. Tabla de Facturas (CFDI 4.0 - Ingreso)
+model Factura {
+  id            String   @id @default(uuid())
+
+  // Identificación del comprobante
+  serie         String   @default("A")
+  folio         String
+  fecha         DateTime
+  lugarExpedicion String  // CP del emisor
+
+  // Tipo de comprobante
+  tipoComprobante String  @default("I") // I=Ingreso, E=Egreso, T=Traslado, N=Nómina, P=Pago
+
+  // Pago
+  formaPago     String   // Clave SAT (01=Efectivo, 03=Transferencia, etc.)
+  metodoPago    String   // PUE o PPD
+  moneda        String   @default("MXN")
+  tipoCambio    Decimal  @default(1) @db.Decimal(10, 6)
+  condicionesPago String?
+
+  // Receptor (relación con Client)
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id])
+  usoCFDI       String   // Clave SAT (G01, G03, etc.)
+
+  // Totales
+  subtotal      Decimal  @db.Decimal(15, 2)
+  descuento     Decimal  @default(0) @db.Decimal(15, 2)
+  totalIVA      Decimal  @default(0) @db.Decimal(15, 2)
+  totalIEPS     Decimal  @default(0) @db.Decimal(15, 2)
+  retencionIVA  Decimal  @default(0) @db.Decimal(15, 2)
+  retencionISR  Decimal  @default(0) @db.Decimal(15, 2)
+  total         Decimal  @db.Decimal(15, 2)
+
+  // Estado del CFDI
+  estado        String   @default("BORRADOR") // BORRADOR, TIMBRADO, CANCELADO
+  uuid          String?  // UUID del SAT (después de timbrar)
+  xmlTimbrado   String?  // XML firmado por el PAC
+  pdfUrl        String?  // URL del PDF generado
+
+  // Notas internas
+  notas         String?
+
+  // Conceptos (relación 1:N)
+  conceptos     ConceptoFactura[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([serie, folio]) // No puede haber dos facturas con misma serie+folio
+}
+
+// 4. Conceptos de la Factura
+model ConceptoFactura {
+  id              String   @id @default(uuid())
+
+  // Relación con la factura
+  facturaId       String
+  factura         Factura  @relation(fields: [facturaId], references: [id], onDelete: Cascade)
+
+  // Relación opcional con producto del catálogo
+  productId       String?
+  product         Product? @relation(fields: [productId], references: [id])
+
+  // Datos del concepto (CFDI 4.0)
+  claveProdServ   String   // Clave SAT
+  claveUnidad     String   // Clave SAT de unidad
+  unidad          String   // Nombre de la unidad
+  descripcion     String   // Descripción editable
+  cantidad        Decimal  @db.Decimal(15, 6)
+  precioUnitario  Decimal  @db.Decimal(15, 6)
+  descuento       Decimal  @default(0) @db.Decimal(15, 2)
+  importe         Decimal  @db.Decimal(15, 2) // cantidad * precioUnitario - descuento
+
+  // Impuestos del concepto
+  objetoImpuesto  String   @default("02")
+  ivaTasa         Decimal  @default(0.16) @db.Decimal(5, 4)
+  iepsTasa        Decimal  @default(0.00) @db.Decimal(5, 4)
+  ivaImporte      Decimal  @default(0) @db.Decimal(15, 2)
+  iepsImporte     Decimal  @default(0) @db.Decimal(15, 2)
+
+  createdAt       DateTime @default(now())
 }
 
