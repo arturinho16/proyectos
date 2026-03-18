@@ -1,0 +1,45 @@
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function GET() {
+  try {
+    const clients = await prisma.client.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    return NextResponse.json(clients);
+  } catch (error) {
+    return NextResponse.json({ error: 'Error al obtener clientes' }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const newClient = await prisma.client.create({
+      data: {
+        rfc: body.rfc.toUpperCase().trim(),
+        nombreRazonSocial: body.nombreRazonSocial.toUpperCase().trim(),
+        regimenFiscal: body.regimenFiscal,
+        cp: body.cp,
+        usoCfdiDefault: body.usoCfdiDefault || 'G03',
+        email: body.email,
+        emailOpcional1: body.emailOpcional1 || null,
+        emailOpcional2: body.emailOpcional2 || null,
+        telefono: body.telefono || null,
+        celular: body.celular || null,
+        tipoPersona: body.tipoPersona || null,
+        calle: body.calle || null,
+        numExterior: body.numExterior || null,
+        numInterior: body.numInterior || null,
+        colonia: body.colonia || null,
+        municipio: body.municipio || null,
+        estado: body.estado || null,
+        pais: body.pais || 'MEXICO',
+      },
+    });
+    return NextResponse.json(newClient, { status: 201 });
+  } catch (error: any) {
+    console.error('Error POST /api/clients:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

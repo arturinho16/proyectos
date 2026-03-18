@@ -1,0 +1,11 @@
+export default function HomePage() {
+  return (
+    <div className="p-20 text-center">
+      <h1 className="text-4xl font-bold text-blue-600">Bienvenido al Autofacturador</h1>
+      <p className="mt-4 text-gray-600">Selecciona un módulo en el menú para comenzar.</p>
+      <a href="/catalogos/clientes" className="mt-6 inline-block bg-blue-600 text-white px-6 py-2 rounded-lg">
+        Ir a Clientes
+      </a>
+    </div>
+  );
+}

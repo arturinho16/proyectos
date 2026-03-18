@@ -1,0 +1,81 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+// Este es tu archivo de esquema de Prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+ 
+}
+
+// 1. Tabla de Clientes 
+	model Client {
+  id                String   @id @default(uuid())
+  
+  // Datos Fiscales Obligatorios (CFDI 4.0)
+  rfc               String   @unique
+  //email             String?
+  
+  nombreRazonSocial String   // EXACTO a la CIF (Mayúsculas)
+  regimenFiscal     String   // Clave SAT (ej. 601, 626)
+  cp                String   // Código Postal Fiscal
+  usoCfdiDefault    String   @default("G03") // Por defecto Gastos en General
+
+  // Datos de Domicilio (Extraídos de la CIF)
+  calle             String?
+  numExterior       String?
+  numInterior       String?
+  colonia           String?
+  municipio         String?
+  estado            String?
+  pais              String   @default("MEXICO")
+
+  // Contacto y Administración
+  email             String?
+  emailOpcional1    String?
+  emailOpcional2    String?
+  telefono          String?
+  celular           String?
+  tipoPersona       String?  // Fisica o Moral
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// 2. Tabla de Productos (Basada en tu captura "Nuevo Producto")
+model Product {
+  id               String   @id @default(uuid())
+
+  // Datos del Producto
+  numeroInterno    String?  // Número interno (folio propio)
+  nombre           String
+  codigoInterno    String?  // SKU / Código interno opcional
+  descripcion      String
+  precio           Decimal  @db.Decimal(15, 6) // 6 decimales para precios exactos
+
+  // Impuestos Federales
+  ivaTasa          Decimal  @default(0.16) @db.Decimal(5, 4) // 0.16 = 16%, 0.08 = 8%, 0.00 = exento
+  iepsTasa         Decimal  @default(0.00) @db.Decimal(5, 4) // IEPS opcional
+  
+  // CFDI 4.0 SAT (Obligatorios)
+  claveProdServ    String   // Clave SAT del producto (ej. 43202009)
+  claveUnidad      String   // Clave SAT de unidad (ej. H87, E48, KGM)
+  unidad           String   // Nombre de la unidad (ej. Pieza, Servicio)
+  objetoImpuesto   String   @default("02") // 01=No objeto, 02=Sí objeto, 03=Sí objeto no obligado
+
+  // Opcionales
+  cuentaPredial    String?  // Para bienes inmuebles
+  numeroPedimento  String?  // Información aduanera
+  impuestoLocal    Decimal? @db.Decimal(5, 4) // Tasa de impuesto local si aplica
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
