@@ -1,523 +1,611 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { FileText, PlusCircle, Search, Eye, Download, Mail, Loader2, X } from 'lucide-react';
-import Link from 'next/link';
-import dynamic from 'next/dynamic';
+import { useState, useEffect, useRef } from 'react';
+import { FileText, PlusCircle, Trash2, Search } from 'lucide-react';
+import { REGIMENES_FISCALES, USOS_CFDI } from '@/lib/sat/catalogos';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
-type Concepto = {
-  descripcion: string;
-  cantidad: number;
-  importe: number;
-  claveProdServ?: string;
-  claveUnidad?: string;
-  precioUnitario?: number;
+type Client = {
+  id: string;
+  nombreRazonSocial: string;  // ✅ corregido (antes: nombre)
+  rfc: string;
+  regimenFiscal: string;
+  cp: string;                 // ✅ corregido (antes: codigoPostal)
+  usoCfdiDefault?: string;    // ✅ corregido (antes: usoCFDI)
 };
 
-type Factura = {
+type Product = {
   id: string;
-  serie: string;
-  folio: string;
-  fecha: string;
-  formaPago: string;
-  metodoPago: string;
-  moneda: string;
-  subtotal: number;
-  totalIVA: number;
-  total: number;
-  estado: string;
-  uuid?: string;
-  notas?: string;
-  client: {
-    nombreRazonSocial: string;
-    rfc: string;
-    email?: string;
-    cp?: string;
-    regimenFiscal?: string;
-    calle?: string;
-    numExterior?: string;
-    numInterior?: string;
-    colonia?: string;
-    municipio?: string;
-    estado?: string;
-    usoCfdiDefault?: string;
-  };
-  conceptos: Concepto[];
+  nombre: string;
+  descripcion: string;
+  claveProdServ: string;
+  claveUnidad: string;
+  unidad: string;
+  precio: number;
+  ivaTasa: number;
+  iepsTasa: number;
+  objetoImpuesto: string;
 };
+
+type Concepto = {
+  productoId: string;
+  descripcion: string;
+  claveProdServ: string;
+  claveUnidad: string;
+  unidad: string;
+  cantidad: number;
+  precioUnitario: number;
+  descuento: number;
+  descuentoPct: number;       // ✅ nuevo: descuento como %
+  ivaTasa: number;
+  iepsTasa: number;
+  objetoImpuesto: string;
+};
+
+// ─── Catálogos locales ────────────────────────────────────────────────────────
+const FORMAS_PAGO = [
+  { clave: '01', descripcion: 'Efectivo' },
+  { clave: '02', descripcion: 'Cheque nominativo' },
+  { clave: '03', descripcion: 'Transferencia electrónica de fondos' },
+  { clave: '04', descripcion: 'Tarjeta de crédito' },
+  { clave: '05', descripcion: 'Monedero electrónico' },
+  { clave: '06', descripcion: 'Dinero electrónico' },
+  { clave: '08', descripcion: 'Vales de despensa' },
+  { clave: '12', descripcion: 'Dación en pago' },
+  { clave: '13', descripcion: 'Pago por subrogación' },
+  { clave: '14', descripcion: 'Pago por consignación' },
+  { clave: '15', descripcion: 'Condonación' },
+  { clave: '17', descripcion: 'Compensación' },
+  { clave: '23', descripcion: 'Novación' },
+  { clave: '24', descripcion: 'Confusión' },
+  { clave: '25', descripcion: 'Remisión de deuda' },
+  { clave: '26', descripcion: 'Prescripción o caducidad' },
+  { clave: '27', descripcion: 'A satisfacción del acreedor' },
+  { clave: '28', descripcion: 'Tarjeta de débito' },
+  { clave: '29', descripcion: 'Tarjeta de servicios' },
+  { clave: '30', descripcion: 'Aplicación de anticipos' },
+  { clave: '31', descripcion: 'Intermediario pagos' },
+  { clave: '99', descripcion: 'Por definir' },
+];
+
+const MONEDAS = [
+  { clave: 'MXN', descripcion: 'Peso Mexicano' },
+  { clave: 'USD', descripcion: 'Dólar Americano' },
+  { clave: 'EUR', descripcion: 'Euro' },
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const ESTADO_BADGE: Record<string, string> = {
-  BORRADOR: 'bg-amber-100 text-amber-700',
-  TIMBRADO: 'bg-green-100 text-green-700',
-  CANCELADO: 'bg-red-100 text-red-600',
+const calcularConcepto = (c: Concepto) => {
+  const importeBruto = c.cantidad * c.precioUnitario;
+  const descuentoMonto = c.descuentoPct > 0
+    ? importeBruto * (c.descuentoPct / 100)
+    : c.descuento;
+  const importe = importeBruto - descuentoMonto;
+  const iva = c.objetoImpuesto !== '01' ? importe * c.ivaTasa : 0;
+  const ieps = c.objetoImpuesto !== '01' ? importe * c.iepsTasa : 0;
+  return { importe, iva, ieps, descuentoMonto };
 };
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
+const conceptoVacio = (): Concepto => ({
+  productoId: '',
+  descripcion: '',
+  claveProdServ: '',
+  claveUnidad: '',
+  unidad: '',
+  cantidad: 1,
+  precioUnitario: 0,
+  descuento: 0,
+  descuentoPct: 0,
+  ivaTasa: 0.16,
+  iepsTasa: 0,
+  objetoImpuesto: '02',
+});
 
-const fmtFecha = (d: string) =>
-  new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
-
-// Datos fijos del emisor (de tu CIF)
-const EMISOR = {
-  nombre: 'OMAR ARTURO CORONA MONROY',
-  rfc: 'COMO891216CM1',
-  direccion: 'Francisco Clavijero 106 Int. 2, Centro',
-  cp: '42000 HIDALGO',
-  regimenFiscal: '626 - Régimen Simplificado de Confianza',
-  telefono: '7712427953',
-};
-
-// ─── Modal de correo ──────────────────────────────────────────────────────────
-function ModalCorreo({
-  factura,
-  onClose,
-  onEnviar,
-  enviando,
-  mensaje,
+// ─── Componente: Buscador de cliente ─────────────────────────────────────────
+function ClienteSearch({
+  clients,
+  onSelect,
 }: {
-  factura: Factura;
-  onClose: () => void;
-  onEnviar: (correo: string) => void;
-  enviando: boolean;
-  mensaje: string;
+  clients: Client[];
+  onSelect: (c: Client) => void;
 }) {
-  const [correo, setCorreo] = useState(factura.client.email || '');
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<Client | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const filtered = query.length >= 1
+    ? clients.filter(c =>
+      c.nombreRazonSocial.toLowerCase().includes(query.toLowerCase()) ||
+      c.rfc.toLowerCase().includes(query.toLowerCase())
+    ).slice(0, 8)
+    : [];
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleSelect = (c: Client) => {
+    setSelected(c);
+    setQuery(c.nombreRazonSocial);
+    setOpen(false);
+    onSelect(c);
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-800">Enviar Factura por Correo</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="bg-slate-50 rounded-xl p-3 text-sm text-slate-600 space-y-1">
-          <p><span className="font-bold">Factura:</span> {factura.serie}-{factura.folio}</p>
-          <p><span className="font-bold">Cliente:</span> {factura.client.nombreRazonSocial}</p>
-          <p><span className="font-bold">Total:</span> {fmt(Number(factura.total))}</p>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-bold uppercase text-slate-400">Correo destino</label>
-          <input
-            type="email"
-            value={correo}
-            onChange={e => setCorreo(e.target.value)}
-            placeholder="correo@ejemplo.com"
-            className="w-full p-2.5 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-          />
-        </div>
-        {mensaje && (
-          <p className={`text-sm font-medium ${mensaje.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>
-            {mensaje}
-          </p>
-        )}
-        <div className="flex gap-3 pt-2">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 text-sm font-medium"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={() => onEnviar(correo)}
-            disabled={enviando || !correo}
-            className="flex-1 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 disabled:opacity-50 text-sm font-bold flex items-center justify-center gap-2"
-          >
-            {enviando ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando...</> : <><Mail className="w-4 h-4" /> Enviar</>}
-          </button>
-        </div>
+    <div ref={ref} className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+        <input
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true); setSelected(null); }}
+          onFocus={() => setOpen(true)}
+          placeholder="Buscar por nombre o RFC..."
+          className="w-full pl-9 p-2.5 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
+        />
       </div>
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+          {filtered.map(c => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => handleSelect(c)}
+              className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-slate-100 last:border-0"
+            >
+              <div className="font-bold text-sm text-slate-800">{c.nombreRazonSocial}</div>
+              <div className="text-xs text-slate-400 font-mono">{c.rfc} — CP {c.cp}</div>
+            </button>
+          ))}
+        </div>
+      )}
+      {open && query.length >= 2 && filtered.length === 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg px-4 py-3 text-sm text-slate-400">
+          No se encontraron clientes
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Página principal ─────────────────────────────────────────────────────────
-export default function FacturasPage() {
-  const [facturas, setFacturas] = useState<Factura[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState('');
-  const [desde, setDesde] = useState('');
-  const [hasta, setHasta] = useState('');
-  const [expandida, setExpandida] = useState<string | null>(null);
+export default function NuevaFacturaPage() {
+  const [clients, setClients] = useState<Client[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [conceptos, setConceptos] = useState<Concepto[]>([conceptoVacio()]);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Estado para PDF
-  const [descargando, setDescargando] = useState<string | null>(null);
+  // Encabezado
+  const [clienteId, setClienteId] = useState('');
+  const [clienteData, setClienteData] = useState<Partial<Client>>({});
+  const [usoCFDI, setUsoCFDI] = useState('G03');
+  const [formaPago, setFormaPago] = useState('03');
+  const [metodoPago, setMetodoPago] = useState('PUE');
+  const [moneda, setMoneda] = useState('MXN');
+  const [tipoCambio, setTipoCambio] = useState(1);
+  const [serie, setSerie] = useState('A');
+  const [folio, setFolio] = useState('1');
+  const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 16));
+  const [condicionesPago, setCondicionesPago] = useState('');
+  const [notas, setNotas] = useState('');
 
-  // Estado para correo
-  const [facturaCorreo, setFacturaCorreo] = useState<Factura | null>(null);
-  const [enviando, setEnviando] = useState(false);
-  const [msgCorreo, setMsgCorreo] = useState('');
+  // Retenciones
+  const [retencionIVAPct, setRetencionIVAPct] = useState(0);
+  const [retencionISRPct, setRetencionISRPct] = useState(0);
 
-  // ── Cargar facturas ──
-  const cargar = useCallback(async () => {
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (q) params.set('q', q);
-    if (filtroEstado) params.set('estado', filtroEstado);
-    if (desde) params.set('desde', desde);
-    if (hasta) params.set('hasta', hasta);
-    const res = await fetch(`/api/facturas?${params}`);
-    const data = await res.json();
-    setFacturas(Array.isArray(data) ? data : []);
-    setLoading(false);
-  }, [q, filtroEstado, desde, hasta]);
+  useEffect(() => {
+    fetch('/api/clients').then(r => r.json()).then(d => setClients(Array.isArray(d) ? d : []));
+    fetch('/api/products').then(r => r.json()).then(d => setProducts(Array.isArray(d) ? d : []));
+  }, []);
 
-  useEffect(() => { cargar(); }, [cargar]);
+  // ✅ Regla SAT: PPD → forzar forma de pago 99
+  useEffect(() => {
+    if (metodoPago === 'PPD') setFormaPago('99');
+  }, [metodoPago]);
 
-  // ── Descargar PDF ──
-  const handleDescargar = async (f: Factura, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setDescargando(f.id);
-    try {
-      // Importar dinámicamente para evitar SSR issues
-      const { pdf } = await import('@react-pdf/renderer');
-      const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF');
-      const React = (await import('react')).default;
+  const handleClienteSelect = (c: Client) => {
+    setClienteId(c.id);
+    setClienteData(c);
+    setUsoCFDI(c.usoCfdiDefault || 'G03');
+  };
 
-      const direccionReceptor = [
-        f.client.calle,
-        f.client.numExterior ? `#${f.client.numExterior}` : '',
-        f.client.numInterior ? `Int. ${f.client.numInterior}` : '',
-        f.client.colonia,
-        f.client.municipio,
-        f.client.estado,
-      ].filter(Boolean).join(', ');
+  const handleProductoChange = (index: number, productoId: string) => {
+    const p = products.find(p => p.id === productoId);
+    if (!p) return;
+    const updated = [...conceptos];
+    updated[index] = {
+      ...updated[index],
+      productoId: p.id,
+      descripcion: p.descripcion || p.nombre,
+      claveProdServ: p.claveProdServ,
+      claveUnidad: p.claveUnidad,
+      unidad: p.unidad,
+      precioUnitario: Number(p.precio),
+      ivaTasa: Number(p.ivaTasa),
+      iepsTasa: Number(p.iepsTasa) || 0,
+      objetoImpuesto: p.objetoImpuesto || '02',
+    };
+    setConceptos(updated);
+  };
 
-      const facturaData = {
-        folio: f.folio,
-        serie: f.serie,
-        fecha: fmtFecha(f.fecha),
-        estado: f.estado,
-        uuid: f.uuid,
-        emisor: EMISOR,
-        receptor: {
-          nombre: f.client.nombreRazonSocial,
-          rfc: f.client.rfc,
-          direccion: direccionReceptor || undefined,
-          cp: f.client.cp,
-          usoCfdi: f.client.usoCfdiDefault,
-          regimenFiscal: f.client.regimenFiscal,
-        },
-        conceptos: f.conceptos.map(c => ({
-          claveProdServ: c.claveProdServ || '01010101',
-          cantidad: Number(c.cantidad),
-          claveUnidad: c.claveUnidad || 'H87',
-          descripcion: c.descripcion,
-          valorUnitario: Number(c.precioUnitario ?? (Number(c.importe) / Number(c.cantidad))),
-          importe: Number(c.importe),
-        })),
-        subtotal: Number(f.subtotal),
-        iva: Number(f.totalIVA),
-        total: Number(f.total),
-        moneda: f.moneda || 'MXN - Peso Mexicano',
-        formaPago: f.formaPago,
-        metodoPago: f.metodoPago,
-      };
+  const handleConceptoField = (index: number, field: keyof Concepto, value: any) => {
+    const updated = [...conceptos];
+    (updated[index] as any)[field] = value;
+    // Si cambia descuentoPct, limpiar descuento fijo y viceversa
+    if (field === 'descuentoPct' && value > 0) updated[index].descuento = 0;
+    if (field === 'descuento' && value > 0) updated[index].descuentoPct = 0;
+    setConceptos(updated);
+  };
 
-      const blob = await pdf(
-        React.createElement(FacturaPDF, { factura: facturaData, logoUrl: '/logo-tufisti.png' })
-      ).toBlob();
+  const agregarConcepto = () => setConceptos([...conceptos, conceptoVacio()]);
+  const eliminarConcepto = (i: number) => setConceptos(conceptos.filter((_, idx) => idx !== i));
 
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Factura-${f.serie}${f.folio}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Error generando PDF:', err);
-      alert('❌ Error al generar el PDF. Verifica que @react-pdf/renderer esté instalado.');
-    } finally {
-      setDescargando(null);
+  // ─── Totales ───────────────────────────────────────────────────────────────
+  const subtotal = conceptos.reduce((acc, c) => acc + calcularConcepto(c).importe, 0);
+  const totalDescuentos = conceptos.reduce((acc, c) => acc + calcularConcepto(c).descuentoMonto, 0);
+  const totalIVA = conceptos.reduce((acc, c) => acc + calcularConcepto(c).iva, 0);
+  const totalIEPS = conceptos.reduce((acc, c) => acc + calcularConcepto(c).ieps, 0);
+  const retencionIVA = subtotal * (retencionIVAPct / 100);
+  const retencionISR = subtotal * (retencionISRPct / 100);
+  const total = subtotal + totalIVA + totalIEPS - retencionIVA - retencionISR;
+
+  // ─── Submit ────────────────────────────────────────────────────────────────
+  const handleSubmit = async () => {
+    if (!clienteId) return alert('Selecciona un cliente');
+    if (conceptos.some(c => !c.productoId)) return alert('Todos los conceptos deben tener un producto');
+    if (conceptos.some(c => !c.descripcion?.trim())) return alert('Todos los conceptos deben tener descripción');
+
+    setSubmitting(true);
+    const payload = {
+      serie, folio, fecha, formaPago, metodoPago, moneda, tipoCambio,
+      condicionesPago, notas, clienteId, usoCFDI,
+      retencionIVAPct, retencionISRPct,
+      conceptos: conceptos.map(c => ({
+        ...c,
+        descuento: calcularConcepto(c).descuentoMonto,
+      })),
+    };
+
+    const res = await fetch('/api/facturas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    setSubmitting(false);
+    if (res.ok) {
+      alert('✅ Factura guardada correctamente');
+      // Limpiar formulario para nueva factura
+      setClienteId('');
+      setClienteData({});
+      setUsoCFDI('G03');
+      setFormaPago('03');
+      setMetodoPago('PUE');
+      setMoneda('MXN');
+      setTipoCambio(1);
+      setSerie('A');
+      setFolio(prev => String(parseInt(prev) + 1)); // auto-incrementar folio
+      setFecha(new Date().toISOString().slice(0, 16));
+      setCondicionesPago('');
+      setNotas('');
+      setRetencionIVAPct(0);
+      setRetencionISRPct(0);
+      setConceptos([conceptoVacio()]);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(`❌ Error: ${err?.error || 'No se pudo guardar'}`);
     }
   };
 
-  // ── Enviar correo ──
-  const handleEnviarCorreo = async (correo: string) => {
-    if (!facturaCorreo) return;
-    setEnviando(true);
-    setMsgCorreo('');
-    try {
-      // Generar PDF como base64
-      const { pdf } = await import('@react-pdf/renderer');
-      const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF');
-      const React = (await import('react')).default;
-
-      const direccionReceptor = [
-        facturaCorreo.client.calle,
-        facturaCorreo.client.numExterior ? `#${facturaCorreo.client.numExterior}` : '',
-        facturaCorreo.client.colonia,
-        facturaCorreo.client.municipio,
-        facturaCorreo.client.estado,
-      ].filter(Boolean).join(', ');
-
-      const facturaData = {
-        folio: facturaCorreo.folio,
-        serie: facturaCorreo.serie,
-        fecha: fmtFecha(facturaCorreo.fecha),
-        estado: facturaCorreo.estado,
-        uuid: facturaCorreo.uuid,
-        emisor: EMISOR,
-        receptor: {
-          nombre: facturaCorreo.client.nombreRazonSocial,
-          rfc: facturaCorreo.client.rfc,
-          direccion: direccionReceptor || undefined,
-          cp: facturaCorreo.client.cp,
-          usoCfdi: facturaCorreo.client.usoCfdiDefault,
-          regimenFiscal: facturaCorreo.client.regimenFiscal,
-        },
-        conceptos: facturaCorreo.conceptos.map(c => ({
-          claveProdServ: c.claveProdServ || '01010101',
-          cantidad: Number(c.cantidad),
-          claveUnidad: c.claveUnidad || 'H87',
-          descripcion: c.descripcion,
-          valorUnitario: Number(c.precioUnitario ?? (Number(c.importe) / Number(c.cantidad))),
-          importe: Number(c.importe),
-        })),
-        subtotal: Number(facturaCorreo.subtotal),
-        iva: Number(facturaCorreo.totalIVA),
-        total: Number(facturaCorreo.total),
-        moneda: facturaCorreo.moneda || 'MXN - Peso Mexicano',
-        formaPago: facturaCorreo.formaPago,
-        metodoPago: facturaCorreo.metodoPago,
-      };
-
-      const blob = await pdf(
-        React.createElement(FacturaPDF, { factura: facturaData, logoUrl: '/logo-tufisti.png' })
-      ).toBlob();
-
-      const reader = new FileReader();
-      reader.readAsDataURL(blob);
-      reader.onloadend = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        const res = await fetch(`/api/facturas/${facturaCorreo.id}/enviar`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ destinatario: correo, pdfBase64: base64 }),
-        });
-        const data = await res.json();
-        setMsgCorreo(data.ok ? `✅ ${data.mensaje}` : `❌ ${data.error}`);
-        setEnviando(false);
-        if (data.ok) setTimeout(() => { setFacturaCorreo(null); setMsgCorreo(''); }, 2000);
-      };
-    } catch (err) {
-      console.error('Error:', err);
-      setMsgCorreo('❌ Error al generar o enviar el PDF');
-      setEnviando(false);
-    }
-  };
-
-  // ── Totales ──
-  const totalGeneral = facturas
-    .filter(f => f.estado !== 'CANCELADO')
-    .reduce((acc, f) => acc + Number(f.total), 0);
-
+  // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-800">
-      {/* Modal correo */}
-      {facturaCorreo && (
-        <ModalCorreo
-          factura={facturaCorreo}
-          onClose={() => { setFacturaCorreo(null); setMsgCorreo(''); }}
-          onEnviar={handleEnviarCorreo}
-          enviando={enviando}
-          mensaje={msgCorreo}
-        />
-      )}
-
-      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="max-w-6xl mx-auto space-y-6">
 
         {/* Header */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 mb-2">
           <FileText className="w-8 h-8 text-blue-600" />
-          <h1 className="text-3xl font-bold">Facturas</h1>
-          <Link
-            href="/facturas/nueva"
-            className="ml-auto flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-all font-bold text-sm shadow-lg shadow-blue-200"
-          >
-            <PlusCircle className="w-4 h-4" /> Nueva Factura
-          </Link>
+          <h1 className="text-3xl font-bold">Nueva Factura</h1>
+          <span className="ml-auto text-sm text-slate-400">CFDI 4.0 — Ingreso</span>
         </div>
 
-        {/* KPIs */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { label: 'Total facturas', value: facturas.length, color: 'text-slate-700' },
-            { label: 'Borradores', value: facturas.filter(f => f.estado === 'BORRADOR').length, color: 'text-amber-600' },
-            { label: 'Timbradas', value: facturas.filter(f => f.estado === 'TIMBRADO').length, color: 'text-green-600' },
-            { label: 'Monto total', value: fmt(totalGeneral), color: 'text-blue-700' },
-          ].map(k => (
-            <div key={k.label} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-              <div className="text-xs font-bold uppercase text-slate-400 mb-1">{k.label}</div>
-              <div className={`text-2xl font-bold ${k.color}`}>{k.value}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Filtros */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="flex-1 min-w-[200px] relative">
-              <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-              <input
-                value={q}
-                onChange={e => setQ(e.target.value)}
-                placeholder="Buscar por serie o folio..."
-                className="w-full pl-9 p-2.5 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
+        {/* BLOQUE 1: Encabezado */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <h2 className="text-sm font-bold uppercase text-slate-400 mb-4">Encabezado</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase text-slate-500">Serie</label>
+              <input value={serie} onChange={e => setSerie(e.target.value)} className="w-full p-2.5 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-bold uppercase text-slate-400">Estado</label>
-              <select
-                value={filtroEstado}
-                onChange={e => setFiltroEstado(e.target.value)}
-                className="p-2.5 border rounded-xl bg-slate-50 outline-none text-sm"
-              >
-                <option value="">Todos</option>
-                <option value="BORRADOR">Borrador</option>
-                <option value="TIMBRADO">Timbrado</option>
-                <option value="CANCELADO">Cancelado</option>
+              <label className="text-xs font-bold uppercase text-slate-500">Folio</label>
+              <input value={folio} onChange={e => setFolio(e.target.value)} className="w-full p-2.5 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div className="space-y-1 col-span-2">
+              <label className="text-xs font-bold uppercase text-slate-500">Fecha y Hora</label>
+              <input type="datetime-local" value={fecha} onChange={e => setFecha(e.target.value)} className="w-full p-2.5 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase text-slate-500">Método de Pago</label>
+              <select value={metodoPago} onChange={e => setMetodoPago(e.target.value)} className="w-full p-2.5 border rounded-xl bg-slate-50 outline-none">
+                <option value="PUE">PUE - Una sola exhibición</option>
+                <option value="PPD">PPD - Parcialidades o diferido</option>
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-bold uppercase text-slate-400">Desde</label>
-              <input type="date" value={desde} onChange={e => setDesde(e.target.value)}
-                className="p-2.5 border rounded-xl bg-slate-50 outline-none text-sm" />
+              <label className="text-xs font-bold uppercase text-slate-500">
+                Forma de Pago
+                {metodoPago === 'PPD' && <span className="ml-1 text-amber-500 font-normal normal-case">(forzado a 99)</span>}
+              </label>
+              <select
+                value={formaPago}
+                onChange={e => setFormaPago(e.target.value)}
+                disabled={metodoPago === 'PPD'}
+                className="w-full p-2.5 border rounded-xl bg-slate-50 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {FORMAS_PAGO.map(f => <option key={f.clave} value={f.clave}>{f.clave} - {f.descripcion}</option>)}
+              </select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-bold uppercase text-slate-400">Hasta</label>
-              <input type="date" value={hasta} onChange={e => setHasta(e.target.value)}
-                className="p-2.5 border rounded-xl bg-slate-50 outline-none text-sm" />
+              <label className="text-xs font-bold uppercase text-slate-500">Moneda</label>
+              <select value={moneda} onChange={e => setMoneda(e.target.value)} className="w-full p-2.5 border rounded-xl bg-slate-50 outline-none">
+                {MONEDAS.map(m => <option key={m.clave} value={m.clave}>{m.clave} - {m.descripcion}</option>)}
+              </select>
             </div>
-            {(q || filtroEstado || desde || hasta) && (
-              <button
-                onClick={() => { setQ(''); setFiltroEstado(''); setDesde(''); setHasta(''); }}
-                className="p-2.5 border border-red-200 text-red-400 rounded-xl hover:bg-red-50 text-sm"
-              >
-                Limpiar filtros
-              </button>
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase text-slate-500">
+                Tipo de Cambio
+                {moneda === 'MXN' && <span className="ml-1 text-slate-400 font-normal normal-case">(N/A)</span>}
+              </label>
+              <input
+                type="number" step="0.0001" min="0.0001"
+                value={tipoCambio}
+                onChange={e => setTipoCambio(parseFloat(e.target.value) || 1)}
+                disabled={moneda === 'MXN'}
+                className="w-full p-2.5 border rounded-xl bg-slate-50 outline-none disabled:opacity-50"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase text-slate-500">Condiciones de Pago</label>
+              <input value={condicionesPago} onChange={e => setCondicionesPago(e.target.value)} placeholder="Ej: CONTADO" className="w-full p-2.5 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div className="space-y-1 col-span-2 md:col-span-3">
+              <label className="text-xs font-bold uppercase text-slate-500">Notas Internas</label>
+              <input value={notas} onChange={e => setNotas(e.target.value)} placeholder="Opcional — no aparece en el CFDI" className="w-full p-2.5 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+        </div>
+
+        {/* BLOQUE 2: Receptor */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <h2 className="text-sm font-bold uppercase text-slate-400 mb-4">Receptor</h2>
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase text-slate-500">Buscar Cliente</label>
+              <ClienteSearch clients={clients} onSelect={handleClienteSelect} />
+            </div>
+
+            {clienteData.rfc && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold uppercase text-blue-600">RFC</label>
+                  <div className="p-2.5 bg-white border border-blue-200 rounded-xl text-sm font-mono">{clienteData.rfc}</div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold uppercase text-blue-600">Código Postal</label>
+                  <div className="p-2.5 bg-white border border-blue-200 rounded-xl text-sm font-mono">{clienteData.cp}</div>
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <label className="text-xs font-bold uppercase text-blue-600">Régimen Fiscal</label>
+                  <div className="p-2.5 bg-white border border-blue-200 rounded-xl text-sm">
+                    {clienteData.regimenFiscal} — {REGIMENES_FISCALES.find(r => r.clave === clienteData.regimenFiscal)?.descripcion}
+                  </div>
+                </div>
+                <div className="space-y-1 col-span-2 md:col-span-4">
+                  <label className="text-xs font-bold uppercase text-blue-600">Uso CFDI</label>
+                  <select value={usoCFDI} onChange={e => setUsoCFDI(e.target.value)} className="w-full p-2.5 border border-blue-200 rounded-xl bg-white outline-none">
+                    {USOS_CFDI.map(u => <option key={u.clave} value={u.clave}>{u.descripcion}</option>)}
+                  </select>
+                </div>
+              </div>
             )}
           </div>
         </div>
 
-        {/* Tabla */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          {loading ? (
-            <div className="p-12 text-center text-slate-400 flex items-center justify-center gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" /> Cargando facturas...
+        {/* BLOQUE 3: Conceptos */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold uppercase text-slate-400">Conceptos</h2>
+            <button onClick={agregarConcepto} className="flex items-center gap-2 text-sm bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-all">
+              <PlusCircle className="w-4 h-4" /> Agregar Concepto
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {conceptos.map((c, i) => {
+              const { importe, iva, ieps } = calcularConcepto(c);
+              return (
+                <div key={i} className="p-4 border border-slate-200 rounded-2xl bg-slate-50 space-y-3">
+                  {/* Fila 1: Producto + Cantidad + Precio */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="text-xs font-bold uppercase text-slate-500">Producto / Servicio</label>
+                      <select
+                        value={c.productoId}
+                        onChange={e => handleProductoChange(i, e.target.value)}
+                        className="w-full p-2.5 border rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">— Selecciona un producto —</option>
+                        {products.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold uppercase text-slate-500">Cantidad</label>
+                      <input
+                        type="number" min="0.001" step="0.001"
+                        value={c.cantidad}
+                        onChange={e => handleConceptoField(i, 'cantidad', parseFloat(e.target.value) || 0)}
+                        className="w-full p-2.5 border rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold uppercase text-slate-500">Precio Unitario</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-slate-400 text-sm">$</span>
+                        <input
+                          type="number" step="0.000001"
+                          value={c.precioUnitario}
+                          onChange={e => handleConceptoField(i, 'precioUnitario', parseFloat(e.target.value) || 0)}
+                          className="w-full p-2.5 pl-6 border rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Fila 2: Descripción editable */}
+                  {c.productoId && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold uppercase text-slate-500">Descripción <span className="text-slate-400 font-normal normal-case">(editable — aparece en el CFDI)</span></label>
+                      <input
+                        value={c.descripcion}
+                        onChange={e => handleConceptoField(i, 'descripcion', e.target.value)}
+                        className="w-full p-2.5 border rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                  )}
+
+                  {/* Fila 3: Claves SAT + Descuento + Totales */}
+                  {c.productoId && (
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3 pt-2 border-t border-slate-200">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold uppercase text-slate-400">Clave SAT</label>
+                        <div className="text-xs font-mono bg-slate-100 p-2 rounded-lg">{c.claveProdServ}</div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold uppercase text-slate-400">Unidad</label>
+                        <div className="text-xs font-mono bg-slate-100 p-2 rounded-lg">{c.claveUnidad} - {c.unidad}</div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold uppercase text-slate-400">Desc. $</label>
+                        <input
+                          type="number" step="0.01" min="0"
+                          value={c.descuento}
+                          onChange={e => handleConceptoField(i, 'descuento', parseFloat(e.target.value) || 0)}
+                          className="w-full p-2 border rounded-lg bg-white outline-none text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold uppercase text-slate-400">Desc. %</label>
+                        <input
+                          type="number" step="0.01" min="0" max="100"
+                          value={c.descuentoPct}
+                          onChange={e => handleConceptoField(i, 'descuentoPct', parseFloat(e.target.value) || 0)}
+                          className="w-full p-2 border rounded-lg bg-white outline-none text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold uppercase text-slate-400">IVA</label>
+                        <div className="text-xs font-mono bg-orange-50 text-orange-600 p-2 rounded-lg">${iva.toFixed(2)}</div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold uppercase text-slate-400">Importe</label>
+                        <div className="text-xs font-mono bg-green-50 text-green-700 font-bold p-2 rounded-lg">${importe.toFixed(2)}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {conceptos.length > 1 && (
+                    <div className="flex justify-end">
+                      <button onClick={() => eliminarConcepto(i)} className="text-red-400 hover:text-red-600 flex items-center gap-1 text-xs">
+                        <Trash2 className="w-3 h-3" /> Eliminar concepto
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* BLOQUE 4: Retenciones + Totales */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <h2 className="text-sm font-bold uppercase text-slate-400 mb-4">Retenciones e Impuestos</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold uppercase text-slate-500">Retención IVA %</label>
+                  <input type="number" step="0.01" min="0" max="100" value={retencionIVAPct}
+                    onChange={e => setRetencionIVAPct(parseFloat(e.target.value) || 0)}
+                    className="w-full p-2.5 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold uppercase text-slate-500">Retención ISR %</label>
+                  <input type="number" step="0.01" min="0" max="100" value={retencionISRPct}
+                    onChange={e => setRetencionISRPct(parseFloat(e.target.value) || 0)}
+                    className="w-full p-2.5 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <p className="text-xs text-slate-400">Ej: Honorarios → IVA 10.67%, ISR 10%</p>
             </div>
-          ) : facturas.length === 0 ? (
-            <div className="p-12 text-center">
-              <FileText className="w-12 h-12 text-slate-200 mx-auto mb-3" />
-              <p className="text-slate-400">No se encontraron facturas</p>
-              <Link href="/facturas/nueva" className="mt-4 inline-block text-blue-600 text-sm font-bold hover:underline">
-                + Crear primera factura
-              </Link>
+
+            <div className="bg-slate-50 rounded-2xl p-4 space-y-2 border border-slate-200">
+              {totalDescuentos > 0 && (
+                <div className="flex justify-between text-sm text-slate-500">
+                  <span>Descuentos</span>
+                  <span className="font-mono text-red-400">-${totalDescuentos.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm text-slate-600">
+                <span>Subtotal</span>
+                <span className="font-mono">${subtotal.toFixed(2)}</span>
+              </div>
+              {totalIEPS > 0 && (
+                <div className="flex justify-between text-sm text-slate-600">
+                  <span>IEPS</span>
+                  <span className="font-mono text-orange-500">${totalIEPS.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm text-slate-600">
+                <span>IVA Trasladado</span>
+                <span className="font-mono text-orange-500">${totalIVA.toFixed(2)}</span>
+              </div>
+              {retencionIVA > 0 && (
+                <div className="flex justify-between text-sm text-red-500">
+                  <span>(-) Retención IVA</span>
+                  <span className="font-mono">-${retencionIVA.toFixed(2)}</span>
+                </div>
+              )}
+              {retencionISR > 0 && (
+                <div className="flex justify-between text-sm text-red-500">
+                  <span>(-) Retención ISR</span>
+                  <span className="font-mono">-${retencionISR.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-lg font-bold text-blue-900 border-t pt-2 mt-2">
+                <span>Total {moneda !== 'MXN' ? moneda : ''}</span>
+                <span className="font-mono">${total.toFixed(2)}</span>
+              </div>
             </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  {['Serie/Folio', 'Fecha', 'Cliente', 'RFC', 'Conceptos', 'Subtotal', 'IVA', 'Total', 'Estado', 'Acciones'].map(h => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-bold uppercase text-slate-400">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {facturas.map(f => (
-                  <>
-                    <tr
-                      key={f.id}
-                      className="hover:bg-slate-50 cursor-pointer transition-colors"
-                      onClick={() => setExpandida(expandida === f.id ? null : f.id)}
-                    >
-                      <td className="px-4 py-3 font-mono font-bold text-blue-700">
-                        {f.serie}-{f.folio}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500">{fmtFecha(f.fecha)}</td>
-                      <td className="px-4 py-3 font-medium max-w-[180px] truncate">{f.client.nombreRazonSocial}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-400">{f.client.rfc}</td>
-                      <td className="px-4 py-3 text-slate-500">{f.conceptos.length} concepto{f.conceptos.length !== 1 ? 's' : ''}</td>
-                      <td className="px-4 py-3 font-mono">{fmt(Number(f.subtotal))}</td>
-                      <td className="px-4 py-3 font-mono text-orange-500">{fmt(Number(f.totalIVA))}</td>
-                      <td className="px-4 py-3 font-mono font-bold text-blue-900">{fmt(Number(f.total))}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-lg text-xs font-bold ${ESTADO_BADGE[f.estado] || 'bg-slate-100 text-slate-500'}`}>
-                          {f.estado}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                          {/* Ver detalle */}
-                          <button
-                            title="Ver detalle"
-                            onClick={() => setExpandida(expandida === f.id ? null : f.id)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
+          </div>
+        </div>
 
-                          {/* Descargar PDF */}
-                          <button
-                            title="Descargar PDF"
-                            onClick={(e) => handleDescargar(f, e)}
-                            disabled={descargando === f.id}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50"
-                          >
-                            {descargando === f.id
-                              ? <Loader2 className="w-4 h-4 animate-spin text-green-500" />
-                              : <Download className="w-4 h-4" />
-                            }
-                          </button>
-
-                          {/* Enviar por correo */}
-                          <button
-                            title="Enviar por correo"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setFacturaCorreo(f);
-                              setMsgCorreo('');
-                            }}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors"
-                          >
-                            <Mail className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-
-                    {/* Fila expandida */}
-                    {expandida === f.id && (
-                      <tr key={`${f.id}-detail`} className="bg-blue-50/40">
-                        <td colSpan={10} className="px-6 py-4">
-                          <div className="space-y-2">
-                            <div className="text-xs font-bold uppercase text-slate-400 mb-2">Conceptos</div>
-                            {f.conceptos.map((c, i) => (
-                              <div key={i} className="flex justify-between text-sm text-slate-600 bg-white rounded-xl px-4 py-2 border border-slate-100">
-                                <span>{c.descripcion}</span>
-                                <span className="font-mono text-slate-400">x{Number(c.cantidad)}</span>
-                                <span className="font-mono font-bold">{fmt(Number(c.importe))}</span>
-                              </div>
-                            ))}
-                            {f.notas && (
-                              <div className="text-xs text-slate-400 mt-2 italic">📝 {f.notas}</div>
-                            )}
-                            {f.uuid && (
-                              <div className="text-xs font-mono text-green-600 mt-1">UUID: {f.uuid}</div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                ))}
-              </tbody>
-            </table>
-          )}
+        {/* Botones */}
+        <div className="flex justify-end gap-3 pb-10">
+          <button onClick={() => window.history.back()} className="px-6 py-3 border border-slate-300 rounded-xl text-slate-600 hover:bg-slate-100 transition-all">
+            Cancelar
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 disabled:opacity-50"
+          >
+            {submitting ? 'Guardando...' : '💾 Guardar Factura'}
+          </button>
         </div>
 
       </div>

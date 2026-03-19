@@ -5,8 +5,8 @@ import { prisma } from '@/lib/prisma';
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.master.tufisti@gmail.com,
-    pass: process.env.lmfc khqq drjo gdzn,
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
   },
 });
 
@@ -79,10 +79,10 @@ export async function POST(
       `,
       attachments: pdfBase64
         ? [{
-            filename: `Factura-${factura.serie ?? ''}${factura.folio}.pdf`,
-            content: pdfBase64,
-            encoding: 'base64',
-          }]
+          filename: `Factura-${factura.serie ?? ''}${factura.folio}.pdf`,
+          content: pdfBase64,
+          encoding: 'base64',
+        }]
         : [],
     });
 
