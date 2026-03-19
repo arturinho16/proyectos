@@ -12,22 +12,23 @@ const transporter = nodemailer.createTransport({
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }  // ← Promise en Next.js 15
 ) {
   try {
+    const { id } = await params;  // ← await obligatorio
     const { destinatario, pdfBase64 } = await req.json();
 
     // Obtener datos de la factura
     const factura = await prisma.factura.findUnique({
-      where: { id: params.id },
-      include: { cliente: true },
+      where: { id },             // ← id extraído del await
+      include: { client: true }, // ← "client" no "cliente"
     });
 
     if (!factura) {
       return NextResponse.json({ error: 'Factura no encontrada' }, { status: 404 });
     }
 
-    const emailDestino = destinatario || factura.cliente?.email;
+    const emailDestino = destinatario || factura.client?.email;
     if (!emailDestino) {
       return NextResponse.json({ error: 'No hay correo destino' }, { status: 400 });
     }
@@ -35,7 +36,7 @@ export async function POST(
     await transporter.sendMail({
       from: `"TuFisTi Facturación" <${process.env.GMAIL_USER}>`,
       to: emailDestino,
-      subject: `Factura ${factura.serie ?? ''}${factura.folio} - ${factura.cliente?.nombreRazonSocial}`,
+      subject: `Factura ${factura.serie ?? ''}${factura.folio} - ${factura.client?.nombreRazonSocial}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <div style="background: #7c3aed; padding: 20px; text-align: center;">
@@ -43,7 +44,7 @@ export async function POST(
             <p style="color: #e9d5ff; margin: 4px 0;">Sistema de Facturación</p>
           </div>
           <div style="padding: 24px; background: #f9fafb;">
-            <p>Estimado(a) <strong>${factura.cliente?.nombreRazonSocial}</strong>,</p>
+            <p>Estimado(a) <strong>${factura.client?.nombreRazonSocial}</strong>,</p>
             <p>Adjunto encontrará su factura con los siguientes datos:</p>
             <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
               <tr style="background: #ede9fe;">
@@ -87,8 +88,8 @@ export async function POST(
     });
 
     return NextResponse.json({ ok: true, mensaje: `Correo enviado a ${emailDestino}` });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error enviando correo:', error);
-    return NextResponse.json({ error: 'Error al enviar correo' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Error al enviar correo' }, { status: 500 });
   }
 }
