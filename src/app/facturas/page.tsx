@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FileText, PlusCircle, Search, Filter, Eye, Download } from 'lucide-react';
+
+import { FileText, PlusCircle, Search, Eye, Download, Mail, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
 type Factura = {
@@ -23,9 +24,9 @@ type Factura = {
 };
 
 const ESTADO_BADGE: Record<string, string> = {
-  BORRADOR:   'bg-slate-100 text-slate-600',
-  TIMBRADO:   'bg-green-100 text-green-700',
-  CANCELADO:  'bg-red-100 text-red-600',
+  BORRADOR: 'bg-slate-100 text-slate-600',
+  TIMBRADO: 'bg-green-100 text-green-700',
+  CANCELADO: 'bg-red-100 text-red-600',
 };
 
 const fmt = (n: number) =>
@@ -42,14 +43,59 @@ export default function FacturasPage() {
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
   const [expandida, setExpandida] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState<string | null>(null); // id de factura en proceso de envío
+
+  const handleDescargar = async (f: Factura, e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Por ahora abre una ventana de impresión con los datos de la factura
+    // Cuando tengas PDF generado, aquí irá: window.open(f.pdfUrl)
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`
+      <html><head><title>Factura ${f.serie}-${f.folio}</title>
+      <style>body{font-family:sans-serif;padding:2rem}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}</style>
+      </head><body>
+      <h2>Factura ${f.serie}-${f.folio}</h2>
+      <p><b>Cliente:</b> ${f.client.nombreRazonSocial} (${f.client.rfc})</p>
+      <p><b>Fecha:</b> ${fmtFecha(f.fecha)} | <b>Estado:</b> ${f.estado}</p>
+      ${f.uuid ? `<p><b>UUID:</b> ${f.uuid}</p>` : ''}
+      <table><thead><tr><th>Descripción</th><th>Cantidad</th><th>Importe</th></tr></thead>
+      <tbody>${f.conceptos.map(c => `<tr><td>${c.descripcion}</td><td>${Number(c.cantidad)}</td><td>${fmt(Number(c.importe))}</td></tr>`).join('')}</tbody>
+      </table>
+      <br/><p><b>Subtotal:</b> ${fmt(Number(f.subtotal))} | <b>IVA:</b> ${fmt(Number(f.totalIVA))} | <b>Total:</b> ${fmt(Number(f.total))}</p>
+      <script>window.print();window.close();</script>
+      </body></html>
+    `);
+    win.document.close();
+  };
+
+  const handleEnviarCorreo = async (f: Factura, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const correo = prompt(`Enviar factura ${f.serie}-${f.folio} a:`);
+    if (!correo) return;
+    setEnviando(f.id);
+    try {
+      const res = await fetch(`/api/facturas/${f.id}/enviar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: correo }),
+      });
+      if (res.ok) alert(`✅ Factura enviada a ${correo}`);
+      else alert('❌ Error al enviar el correo');
+    } catch {
+      alert('❌ Error de conexión');
+    } finally {
+      setEnviando(null);
+    }
+  };
 
   const cargar = async () => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (q)            params.set('q', q);
+    if (q) params.set('q', q);
     if (filtroEstado) params.set('estado', filtroEstado);
-    if (desde)        params.set('desde', desde);
-    if (hasta)        params.set('hasta', hasta);
+    if (desde) params.set('desde', desde);
+    if (hasta) params.set('hasta', hasta);
     const res = await fetch(`/api/facturas?${params}`);
     const data = await res.json();
     setFacturas(Array.isArray(data) ? data : []);
@@ -83,9 +129,9 @@ export default function FacturasPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { label: 'Total facturas', value: facturas.length, color: 'text-slate-700' },
-            { label: 'Borradores',     value: facturas.filter(f => f.estado === 'BORRADOR').length,  color: 'text-slate-500' },
-            { label: 'Timbradas',      value: facturas.filter(f => f.estado === 'TIMBRADO').length,  color: 'text-green-600' },
-            { label: 'Monto total',    value: fmt(totalGeneral), color: 'text-blue-700' },
+            { label: 'Borradores', value: facturas.filter(f => f.estado === 'BORRADOR').length, color: 'text-slate-500' },
+            { label: 'Timbradas', value: facturas.filter(f => f.estado === 'TIMBRADO').length, color: 'text-green-600' },
+            { label: 'Monto total', value: fmt(totalGeneral), color: 'text-blue-700' },
           ].map(k => (
             <div key={k.label} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
               <div className="text-xs font-bold uppercase text-slate-400 mb-1">{k.label}</div>
@@ -156,7 +202,7 @@ export default function FacturasPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  {['Serie/Folio', 'Fecha', 'Cliente', 'RFC', 'Conceptos', 'Subtotal', 'IVA', 'Total', 'Estado', ''].map(h => (
+                  {['Serie/Folio', 'Fecha', 'Cliente', 'RFC', 'Conceptos', 'Subtotal', 'IVA', 'Total', 'Estado', 'Acciones'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-bold uppercase text-slate-400">{h}</th>
                   ))}
                 </tr>
@@ -185,9 +231,36 @@ export default function FacturasPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <button className="text-slate-400 hover:text-blue-600 transition-colors">
-                          <Eye className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                          {/* Ver detalle */}
+                          <button
+                            title="Ver detalle"
+                            onClick={() => setExpandida(expandida === f.id ? null : f.id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {/* Descargar / Imprimir */}
+                          <button
+                            title="Descargar / Imprimir"
+                            onClick={(e) => handleDescargar(f, e)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                          {/* Enviar por correo */}
+                          <button
+                            title="Enviar por correo"
+                            onClick={(e) => handleEnviarCorreo(f, e)}
+                            disabled={enviando === f.id}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors disabled:opacity-50"
+                          >
+                            {enviando === f.id
+                              ? <Loader2 className="w-4 h-4 animate-spin" />
+                              : <Mail className="w-4 h-4" />
+                            }
+                          </button>
+                        </div>
                       </td>
                     </tr>
 
