@@ -27,8 +27,32 @@ export async function GET(req: NextRequest) {
     where,
     orderBy: { createdAt: 'desc' },
     include: {
-      client: { select: { nombreRazonSocial: true, rfc: true } },
-      conceptos: { select: { descripcion: true, cantidad: true, importe: true } },
+      client: {
+        select: {
+          nombreRazonSocial: true,
+          rfc: true,
+          email: true,
+          cp: true,
+          regimenFiscal: true,
+          usoCfdiDefault: true,
+          calle: true,
+          numExterior: true,
+          numInterior: true,
+          colonia: true,
+          municipio: true,
+          estado: true,
+        },
+      },
+      conceptos: {
+        select: {
+          descripcion: true,
+          cantidad: true,
+          importe: true,
+          claveProdServ: true,
+          claveUnidad: true,
+          precioUnitario: true,
+        },
+      },
     },
   });
 
