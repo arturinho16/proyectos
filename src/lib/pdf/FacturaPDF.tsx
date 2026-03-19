@@ -1,69 +1,224 @@
 import React from 'react';
 import {
-  Document, Page, Text, View, StyleSheet, Image, Font
+  Document, Page, Text, View, StyleSheet, Image,
 } from '@react-pdf/renderer';
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const fmt = (n: number) =>
+  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
+
+// ─── Estilos ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  page: { fontSize: 8, padding: 30, fontFamily: 'Helvetica', color: '#1a1a1a' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  logo: { width: 80, height: 80, objectFit: 'contain' },
-  emisorBox: { flex: 1, paddingLeft: 12 },
-  title: { fontSize: 18, fontFamily: 'Helvetica-Bold', color: '#7c3aed', marginBottom: 2 },
-  folio: { fontSize: 10, color: '#555' },
-  bold: { fontFamily: 'Helvetica-Bold' },
-  sectionTitle: {
-    backgroundColor: '#7c3aed', color: 'white', padding: '4 8',
-    fontFamily: 'Helvetica-Bold', fontSize: 9, marginTop: 8, marginBottom: 4
+  page: {
+    fontSize: 8,
+    padding: 36,
+    fontFamily: 'Helvetica',
+    color: '#1a1a1a',
+    backgroundColor: '#ffffff',
   },
-  row: { flexDirection: 'row', marginBottom: 2 },
-  label: { fontFamily: 'Helvetica-Bold', width: 120 },
-  value: { flex: 1 },
-  table: { marginTop: 6 },
-  tableHeader: {
-    flexDirection: 'row', backgroundColor: '#7c3aed', color: 'white',
-    padding: '4 6', fontFamily: 'Helvetica-Bold'
-  },
-  tableRow: { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#ddd', padding: '4 6' },
-  tableRowAlt: { flexDirection: 'row', backgroundColor: '#f5f3ff', borderBottomWidth: 0.5, borderBottomColor: '#ddd', padding: '4 6' },
-  col1: { width: '8%' },
-  col2: { width: '8%' },
-  col3: { width: '8%' },
-  col4: { flex: 1 },
-  col5: { width: '12%', textAlign: 'right' },
-  col6: { width: '12%', textAlign: 'right' },
-  totalsBox: { alignItems: 'flex-end', marginTop: 8 },
-  totalRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 2 },
-  totalLabel: { width: 120, textAlign: 'right', fontFamily: 'Helvetica-Bold', paddingRight: 8 },
-  totalValue: { width: 80, textAlign: 'right' },
-  totalFinal: {
-    flexDirection: 'row', justifyContent: 'flex-end',
-    backgroundColor: '#7c3aed', color: 'white', padding: '4 8', marginTop: 2
-  },
-  totalFinalLabel: { width: 120, textAlign: 'right', fontFamily: 'Helvetica-Bold', paddingRight: 8, color: 'white' },
-  totalFinalValue: { width: 80, textAlign: 'right', color: 'white' },
-  sellosBox: { marginTop: 12, borderTopWidth: 1, borderTopColor: '#ddd', paddingTop: 8 },
-  sellosText: { fontSize: 5.5, color: '#666', marginBottom: 3, wordBreak: 'break-all' },
-  footer: { marginTop: 8, fontSize: 6.5, color: '#888', textAlign: 'center' },
+
+  // ── Watermark ──
   watermark: {
-    position: 'absolute', top: '40%', left: '15%',
-    fontSize: 72, color: '#e5e7eb', opacity: 0.4,
-    fontFamily: 'Helvetica-Bold', transform: 'rotate(-35deg)'
+    position: 'absolute',
+    top: '38%',
+    left: '10%',
+    fontSize: 80,
+    color: '#e5e7eb',
+    opacity: 0.5,
+    fontFamily: 'Helvetica-Bold',
+    transform: 'rotate(-35deg)',
   },
-  qrBox: { alignItems: 'center', marginTop: 8 },
-  statusBadge: {
-    fontSize: 7, padding: '2 6', borderRadius: 4,
-    backgroundColor: '#fef3c7', color: '#92400e',
-    alignSelf: 'flex-start', marginTop: 2
+
+  // ── Header: logo + emisor + receptor ──
+  headerRow: {
+    flexDirection: 'row',
+    marginBottom: 14,
+    gap: 12,
   },
-  statusBadgeTimbrada: {
-    fontSize: 7, padding: '2 6', borderRadius: 4,
-    backgroundColor: '#d1fae5', color: '#065f46',
-    alignSelf: 'flex-start', marginTop: 2
+  logoBox: {
+    width: 90,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  logo: {
+    width: 88,
+    height: 88,
+    objectFit: 'contain',
+  },
+  emisorBox: {
+    flex: 1,
+    paddingLeft: 8,
+  },
+  receptorBox: {
+    flex: 1,
+    paddingLeft: 12,
+    borderLeftWidth: 1,
+    borderLeftColor: '#e5e7eb',
+  },
+
+  // ── Etiqueta roja "FACTURA" ──
+  facturaLabel: {
+    fontSize: 9,
+    fontFamily: 'Helvetica-Bold',
+    color: '#dc2626',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  folioLabel: {
+    fontSize: 9,
+    fontFamily: 'Helvetica-Bold',
+    color: '#dc2626',
+    letterSpacing: 1,
+    marginBottom: 4,
+    textAlign: 'right',
+  },
+
+  // ── Textos emisor/receptor ──
+  sectionLabel: {
+    fontSize: 7,
+    fontFamily: 'Helvetica-Bold',
+    color: '#6b7280',
+    marginBottom: 3,
+    textTransform: 'uppercase',
+  },
+  bold: { fontFamily: 'Helvetica-Bold' },
+  lineText: { marginBottom: 2, fontSize: 8 },
+
+  // ── Separador ──
+  divider: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    marginVertical: 8,
+  },
+
+  // ── Fila de datos CFDI (folio fiscal, fecha, certificado) ──
+  cfdiRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 8,
+  },
+  cfdiCell: { flex: 1 },
+  cfdiLabel: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#374151', marginBottom: 1 },
+  cfdiValue: { fontSize: 7, color: '#374151' },
+
+  // ── Exportación ──
+  exportRow: { flexDirection: 'row', marginBottom: 6 },
+  exportLabel: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#374151', width: 70 },
+  exportValue: { fontSize: 7, color: '#374151' },
+
+  // ── Tabla conceptos ──
+  tableHeader: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
+    paddingBottom: 4,
+    marginBottom: 2,
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 8,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e5e7eb',
+    paddingVertical: 5,
+  },
+  cProd: { width: '10%' },
+  cCant: { width: '8%' },
+  cUnidad: { width: '10%' },
+  cDesc: { flex: 1 },
+  cPrecio: { width: '12%', textAlign: 'right' },
+  cImporte: { width: '12%', textAlign: 'right' },
+
+  // ── Sub-info concepto (impuestos, no identificación) ──
+  conceptoSub: { fontSize: 6.5, color: '#6b7280', marginTop: 2 },
+  conceptoSubBold: { fontSize: 6.5, color: '#374151', fontFamily: 'Helvetica-Bold' },
+
+  // ── Totales ──
+  totalesSection: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 10,
+  },
+  totalesBox: { width: 200 },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 3,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e5e7eb',
+  },
+  totalLabel: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#374151' },
+  totalValue: { fontSize: 8, color: '#374151', textAlign: 'right' },
+  totalFinalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    marginTop: 2,
+  },
+  totalFinalLabel: { fontSize: 10, fontFamily: 'Helvetica-Bold' },
+  totalFinalValue: { fontSize: 10, fontFamily: 'Helvetica-Bold', textAlign: 'right' },
+
+  // ── Letra total ──
+  letraRow: {
+    flexDirection: 'row',
+    marginTop: 6,
+    alignItems: 'center',
+  },
+  letraLabel: { fontSize: 7, fontFamily: 'Helvetica-Bold', width: 60 },
+  letraValue: { fontSize: 7, flex: 1, fontFamily: 'Helvetica-Bold', textTransform: 'uppercase' },
+
+  // ── Moneda ──
+  monedaRow: { flexDirection: 'row', marginTop: 4 },
+  monedaLabel: { fontSize: 7, color: '#6b7280', width: 60 },
+  monedaValue: { fontSize: 7, color: '#6b7280' },
+
+  // ── Sellos ──
+  sellosBox: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    paddingTop: 8,
+  },
+  sellosTitle: {
+    fontSize: 7,
+    fontFamily: 'Helvetica-Bold',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  sellosText: {
+    fontSize: 5.5,
+    color: '#6b7280',
+    marginBottom: 3,
+    wordBreak: 'break-all',
+  },
+
+  // ── Footer ──
+  footer: {
+    marginTop: 10,
+    fontSize: 6.5,
+    color: '#9ca3af',
+    textAlign: 'center',
+    borderTopWidth: 0.5,
+    borderTopColor: '#e5e7eb',
+    paddingTop: 6,
   },
 });
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+interface Concepto {
+  claveProdServ: string;
+  cantidad: number;
+  claveUnidad: string;
+  unidad?: string;
+  descripcion: string;
+  valorUnitario: number;
+  importe: number;
+  descuento?: number;
+  objetoImpuesto?: string;
+  ivaTasa?: number;
+  iepsImporte?: number;
+  noIdentificacion?: string;
+}
 
 interface FacturaPDFProps {
   factura: {
@@ -89,14 +244,7 @@ interface FacturaPDFProps {
       usoCfdi?: string;
       regimenFiscal?: string;
     };
-    conceptos: Array<{
-      claveProdServ: string;
-      cantidad: number;
-      claveUnidad: string;
-      descripcion: string;
-      valorUnitario: number;
-      importe: number;
-    }>;
+    conceptos: Concepto[];
     subtotal: number;
     iva: number;
     total: number;
@@ -115,205 +263,266 @@ interface FacturaPDFProps {
   logoUrl?: string;
 }
 
+// ─── Componente ───────────────────────────────────────────────────────────────
 export const FacturaPDF: React.FC<FacturaPDFProps> = ({ factura, logoUrl }) => {
   const esBorrador = factura.estado === 'BORRADOR';
-  const serie = factura.serie ? `${factura.serie}` : '';
+  const serie = factura.serie ?? '';
 
   return (
     <Document>
       <Page size="LETTER" style={styles.page}>
+
+        {/* Watermark borrador */}
         {esBorrador && <Text style={styles.watermark}>BORRADOR</Text>}
 
-        {/* HEADER */}
-        <View style={styles.header}>
-          {logoUrl && <Image src={logoUrl} style={styles.logo} />}
-          <View style={styles.emisorBox}>
-            <Text style={styles.title}>FACTURA</Text>
-            <Text style={styles.folio}>FOLIO: {serie}{factura.folio}</Text>
-            <Text style={{ marginTop: 4, ...styles.bold }}>{factura.emisor.nombre}</Text>
-            <Text>{factura.emisor.rfc}</Text>
-            {factura.emisor.direccion && <Text>{factura.emisor.direccion}</Text>}
-            {factura.emisor.cp && <Text>CP: {factura.emisor.cp}</Text>}
-            {factura.emisor.regimenFiscal && <Text>Régimen: {factura.emisor.regimenFiscal}</Text>}
-            {factura.emisor.telefono && <Text>Tel: {factura.emisor.telefono}</Text>}
+        {/* ── HEADER: FACTURA label + FOLIO ── */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+          <Text style={styles.facturaLabel}>FACTURA</Text>
+          <Text style={styles.folioLabel}>FOLIO:{'   '}{serie}{factura.folio}</Text>
+        </View>
+
+        {/* ── LOGO + EMISOR + RECEPTOR ── */}
+        <View style={styles.headerRow}>
+
+          {/* Logo */}
+          <View style={styles.logoBox}>
+            {logoUrl && <Image src={logoUrl} style={styles.logo} />}
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={esBorrador ? styles.statusBadge : styles.statusBadgeTimbrada}>
-              {factura.estado}
-            </Text>
-            <Text style={{ marginTop: 6, fontSize: 7 }}>Efecto: I - Ingreso</Text>
-            {factura.exportacion && <Text style={{ fontSize: 7 }}>Exportación: {factura.exportacion}</Text>}
-            {factura.uuid && (
-              <Text style={{ fontSize: 6, marginTop: 4, color: '#555' }}>
-                UUID: {factura.uuid}
+
+          {/* Emisor */}
+          <View style={styles.emisorBox}>
+            <Text style={styles.sectionLabel}>Emisor:</Text>
+            <Text style={[styles.bold, styles.lineText]}>{factura.emisor.nombre}</Text>
+            <Text style={styles.lineText}>{factura.emisor.rfc}</Text>
+            {factura.emisor.direccion && (
+              <Text style={styles.lineText}>{factura.emisor.direccion}</Text>
+            )}
+            {factura.emisor.cp && (
+              <Text style={styles.lineText}>
+                Lugar de Expedición: {factura.emisor.cp}
               </Text>
             )}
+            {factura.emisor.regimenFiscal && (
+              <Text style={styles.lineText}>
+                Régimen Fiscal: {factura.emisor.regimenFiscal}
+              </Text>
+            )}
+            {factura.emisor.telefono && (
+              <Text style={styles.lineText}>Tel: {factura.emisor.telefono}</Text>
+            )}
+            <Text style={styles.lineText}>Efecto del comprobante: I - Ingreso</Text>
           </View>
-        </View>
 
-        {/* RECEPTOR */}
-        <Text style={styles.sectionTitle}>Receptor</Text>
-        <View style={styles.row}>
-          <Text style={styles.label}>Nombre:</Text>
-          <Text style={styles.value}>{factura.receptor.nombre}</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.label}>RFC:</Text>
-          <Text style={styles.value}>{factura.receptor.rfc}</Text>
-        </View>
-        {factura.receptor.direccion && (
-          <View style={styles.row}>
-            <Text style={styles.label}>Dirección:</Text>
-            <Text style={styles.value}>{factura.receptor.direccion}</Text>
-          </View>
-        )}
-        {factura.receptor.cp && (
-          <View style={styles.row}>
-            <Text style={styles.label}>Código Postal:</Text>
-            <Text style={styles.value}>{factura.receptor.cp}</Text>
-          </View>
-        )}
-        {factura.receptor.usoCfdi && (
-          <View style={styles.row}>
-            <Text style={styles.label}>Uso CFDI:</Text>
-            <Text style={styles.value}>{factura.receptor.usoCfdi}</Text>
-          </View>
-        )}
-        {factura.receptor.regimenFiscal && (
-          <View style={styles.row}>
-            <Text style={styles.label}>Régimen Fiscal:</Text>
-            <Text style={styles.value}>{factura.receptor.regimenFiscal}</Text>
-          </View>
-        )}
-
-        {/* DATOS CFDI */}
-        <Text style={styles.sectionTitle}>Datos del Comprobante</Text>
-        <View style={{ flexDirection: 'row', gap: 20 }}>
-          <View style={{ flex: 1 }}>
-            <View style={styles.row}>
-              <Text style={styles.label}>Fecha emisión:</Text>
-              <Text style={styles.value}>{factura.fecha}</Text>
-            </View>
-            {factura.moneda && (
-              <View style={styles.row}>
-                <Text style={styles.label}>Moneda:</Text>
-                <Text style={styles.value}>{factura.moneda}</Text>
+          {/* Receptor */}
+          <View style={styles.receptorBox}>
+            <Text style={styles.sectionLabel}>Receptor:</Text>
+            <Text style={[styles.bold, styles.lineText]}>{factura.receptor.nombre}</Text>
+            <Text style={styles.lineText}>{factura.receptor.rfc}</Text>
+            {factura.receptor.direccion && (
+              <Text style={styles.lineText}>{factura.receptor.direccion}</Text>
+            )}
+            {factura.receptor.cp && (
+              <View style={{ flexDirection: 'row', marginBottom: 2 }}>
+                <Text style={[styles.bold, { fontSize: 8 }]}>Código postal: </Text>
+                <Text style={{ fontSize: 8 }}>{factura.receptor.cp}</Text>
+              </View>
+            )}
+            {factura.receptor.usoCfdi && (
+              <View style={{ flexDirection: 'row', marginBottom: 2 }}>
+                <Text style={[styles.bold, { fontSize: 8 }]}>Uso del CFDI: </Text>
+                <Text style={{ fontSize: 8 }}>{factura.receptor.usoCfdi}</Text>
+              </View>
+            )}
+            {factura.receptor.regimenFiscal && (
+              <View style={{ flexDirection: 'row', marginBottom: 2 }}>
+                <Text style={[styles.bold, { fontSize: 8 }]}>Regimen Fiscal: </Text>
+                <Text style={{ fontSize: 8 }}>{factura.receptor.regimenFiscal}</Text>
               </View>
             )}
           </View>
+        </View>
+
+        <View style={styles.divider} />
+
+        {/* ── FOLIO FISCAL / FECHA / CERTIFICADO ── */}
+        {(factura.uuid || factura.fecha || factura.noCertificado) && (
+          <View style={styles.cfdiRow}>
+            {factura.uuid && (
+              <View style={styles.cfdiCell}>
+                <Text style={styles.cfdiLabel}>Folio Fiscal:</Text>
+                <Text style={styles.cfdiValue}>{factura.uuid}</Text>
+              </View>
+            )}
+            <View style={styles.cfdiCell}>
+              <Text style={styles.cfdiLabel}>Fecha / Hora de Emisión:</Text>
+              <Text style={styles.cfdiValue}>{factura.fecha}</Text>
+            </View>
+            {factura.noCertificado && (
+              <View style={styles.cfdiCell}>
+                <Text style={styles.cfdiLabel}>No. de Certificado Digital:</Text>
+                <Text style={styles.cfdiValue}>{factura.noCertificado}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Exportación */}
+        <View style={styles.exportRow}>
+          <Text style={styles.exportLabel}>Exportacion:</Text>
+          <Text style={styles.exportValue}>{factura.exportacion ?? '01 - No aplica'}</Text>
+        </View>
+
+        <View style={styles.divider} />
+
+        {/* ── TABLA CONCEPTOS ── */}
+        <View style={styles.tableHeader}>
+          <Text style={styles.cProd}>Producto</Text>
+          <Text style={styles.cCant}>Cantidad</Text>
+          <Text style={styles.cUnidad}>Unidad</Text>
+          <Text style={styles.cDesc}>Concepto(s)</Text>
+          <Text style={styles.cPrecio}>Precio U</Text>
+          <Text style={styles.cImporte}>Importe</Text>
+        </View>
+
+        {factura.conceptos.map((c, i) => {
+          const ivaImporte = c.ivaTasa != null
+            ? c.importe * c.ivaTasa
+            : factura.iva / factura.conceptos.length;
+          const objetoLabel = c.objetoImpuesto === '01'
+            ? '01 - Sin objeto de impuesto'
+            : '02 - Con objeto de impuesto';
+
+          return (
+            <View key={i} style={styles.tableRow}>
+              <Text style={styles.cProd}>{c.claveProdServ}</Text>
+              <Text style={styles.cCant}>{c.cantidad}</Text>
+              <Text style={styles.cUnidad}>
+                {c.claveUnidad}{c.unidad ? ` - ${c.unidad}` : ''}
+              </Text>
+              <View style={styles.cDesc}>
+                <Text>{c.descripcion}</Text>
+                <Text style={styles.conceptoSub}>{objetoLabel}</Text>
+                {c.noIdentificacion && (
+                  <View style={{ flexDirection: 'row' }}>
+                    <Text style={styles.conceptoSubBold}>No Identificación: </Text>
+                    <Text style={styles.conceptoSub}>{c.noIdentificacion}</Text>
+                  </View>
+                )}
+                {c.objetoImpuesto !== '01' && (
+                  <View>
+                    <Text style={styles.conceptoSubBold}>Traslados:</Text>
+                    <Text style={styles.conceptoSub}>
+                      IVA: 002, Base: {fmt(c.importe)}, Tasa: {
+                        (c.ivaTasa ?? 0.16).toFixed(6)
+                      }, Importe: {fmt(ivaImporte)}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.cPrecio}>{fmt(c.valorUnitario)}</Text>
+              <Text style={styles.cImporte}>{fmt(c.importe)}</Text>
+            </View>
+          );
+        })}
+
+        <View style={styles.divider} />
+
+        {/* ── MONEDA + TOTALES ── */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 6 }}>
+
+          {/* Izquierda: moneda + letra */}
           <View style={{ flex: 1 }}>
+            <View style={styles.monedaRow}>
+              <Text style={styles.monedaLabel}>Moneda:</Text>
+              <Text style={styles.monedaValue}>{factura.moneda ?? 'MXN - Peso Mexicano'}</Text>
+            </View>
+            {factura.totalLetra && (
+              <View style={styles.letraRow}>
+                <Text style={styles.letraLabel}></Text>
+                <Text style={styles.letraValue}>{factura.totalLetra}</Text>
+              </View>
+            )}
             {factura.formaPago && (
-              <View style={styles.row}>
-                <Text style={styles.label}>Forma de Pago:</Text>
-                <Text style={styles.value}>{factura.formaPago}</Text>
+              <View style={styles.monedaRow}>
+                <Text style={styles.monedaLabel}>Forma Pago:</Text>
+                <Text style={styles.monedaValue}>{factura.formaPago}</Text>
               </View>
             )}
             {factura.metodoPago && (
-              <View style={styles.row}>
-                <Text style={styles.label}>Método de Pago:</Text>
-                <Text style={styles.value}>{factura.metodoPago}</Text>
+              <View style={styles.monedaRow}>
+                <Text style={styles.monedaLabel}>Método Pago:</Text>
+                <Text style={styles.monedaValue}>{factura.metodoPago}</Text>
               </View>
             )}
           </View>
-        </View>
 
-        {/* CONCEPTOS */}
-        <Text style={styles.sectionTitle}>Conceptos</Text>
-        <View style={styles.table}>
-          <View style={styles.tableHeader}>
-            <Text style={styles.col1}>Clave</Text>
-            <Text style={styles.col2}>Cant.</Text>
-            <Text style={styles.col3}>Unidad</Text>
-            <Text style={styles.col4}>Descripción</Text>
-            <Text style={styles.col5}>P. Unit.</Text>
-            <Text style={styles.col6}>Importe</Text>
-          </View>
-          {factura.conceptos.map((c, i) => (
-            <View key={i} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
-              <Text style={styles.col1}>{c.claveProdServ}</Text>
-              <Text style={styles.col2}>{c.cantidad}</Text>
-              <Text style={styles.col3}>{c.claveUnidad}</Text>
-              <Text style={styles.col4}>{c.descripcion}</Text>
-              <Text style={styles.col5}>{fmt(c.valorUnitario)}</Text>
-              <Text style={styles.col6}>{fmt(c.importe)}</Text>
+          {/* Derecha: subtotal / IVA / total */}
+          <View style={styles.totalesBox}>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Subtotal:</Text>
+              <Text style={styles.totalValue}>{fmt(factura.subtotal)}</Text>
             </View>
-          ))}
-        </View>
-
-        {/* TOTALES */}
-        <View style={styles.totalsBox}>
-          {factura.totalLetra && (
-            <Text style={{ fontSize: 7, color: '#555', marginBottom: 4, fontStyle: 'italic' }}>
-              {factura.totalLetra}
-            </Text>
-          )}
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Subtotal:</Text>
-            <Text style={styles.totalValue}>{fmt(factura.subtotal)}</Text>
-          </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>IVA 16%:</Text>
-            <Text style={styles.totalValue}>{fmt(factura.iva)}</Text>
-          </View>
-          <View style={styles.totalFinal}>
-            <Text style={styles.totalFinalLabel}>TOTAL:</Text>
-            <Text style={styles.totalFinalValue}>{fmt(factura.total)}</Text>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>IVA 16%:</Text>
+              <Text style={styles.totalValue}>{fmt(factura.iva)}</Text>
+            </View>
+            <View style={styles.totalFinalRow}>
+              <Text style={styles.totalFinalLabel}>Total:</Text>
+              <Text style={styles.totalFinalValue}>{fmt(factura.total)}</Text>
+            </View>
           </View>
         </View>
 
-        {/* SELLOS (solo si está timbrada) */}
-        {!esBorrador && (
+        {/* ── SELLOS (solo timbrada) ── */}
+        {!esBorrador && (factura.cadenaOriginal || factura.selloCfdi || factura.selloSat) && (
           <View style={styles.sellosBox}>
-            <Text style={styles.sectionTitle}>Información de Timbrado</Text>
+            <Text style={styles.sellosTitle}>Información de Timbrado</Text>
             {factura.fechaTimbrado && (
-              <View style={styles.row}>
-                <Text style={styles.label}>Fecha timbrado:</Text>
-                <Text style={styles.value}>{factura.fechaTimbrado}</Text>
-              </View>
-            )}
-            {factura.noCertificado && (
-              <View style={styles.row}>
-                <Text style={styles.label}>No. Certificado:</Text>
-                <Text style={styles.value}>{factura.noCertificado}</Text>
+              <View style={{ flexDirection: 'row', marginBottom: 2 }}>
+                <Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold' }]}>Fecha timbrado: </Text>
+                <Text style={styles.sellosText}>{factura.fechaTimbrado}</Text>
               </View>
             )}
             {factura.noCertificadoSat && (
-              <View style={styles.row}>
-                <Text style={styles.label}>No. Cert. SAT:</Text>
-                <Text style={styles.value}>{factura.noCertificadoSat}</Text>
+              <View style={{ flexDirection: 'row', marginBottom: 2 }}>
+                <Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold' }]}>No. Cert. SAT: </Text>
+                <Text style={styles.sellosText}>{factura.noCertificadoSat}</Text>
               </View>
             )}
             {factura.rfcPac && (
-              <View style={styles.row}>
-                <Text style={styles.label}>RFC PAC:</Text>
-                <Text style={styles.value}>{factura.rfcPac}</Text>
+              <View style={{ flexDirection: 'row', marginBottom: 2 }}>
+                <Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold' }]}>RFC PAC: </Text>
+                <Text style={styles.sellosText}>{factura.rfcPac}</Text>
               </View>
             )}
             {factura.cadenaOriginal && (
               <>
-                <Text style={{ ...styles.bold, fontSize: 7, marginTop: 4 }}>Cadena Original:</Text>
+                <Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold', marginTop: 4 }]}>Cadena Original:</Text>
                 <Text style={styles.sellosText}>{factura.cadenaOriginal}</Text>
               </>
             )}
             {factura.selloCfdi && (
               <>
-                <Text style={{ ...styles.bold, fontSize: 7, marginTop: 4 }}>Sello Digital CFDI:</Text>
+                <Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold', marginTop: 4 }]}>Sello Digital CFDI:</Text>
                 <Text style={styles.sellosText}>{factura.selloCfdi}</Text>
               </>
             )}
             {factura.selloSat && (
               <>
-                <Text style={{ ...styles.bold, fontSize: 7, marginTop: 4 }}>Sello Digital SAT:</Text>
+                <Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold', marginTop: 4 }]}>Sello Digital SAT:</Text>
                 <Text style={styles.sellosText}>{factura.selloSat}</Text>
               </>
             )}
           </View>
         )}
 
-        {/* FOOTER */}
+        {/* ── FOOTER ── */}
         <Text style={styles.footer}>
-          Este documento es una representación impresa de un CFDI. • Lugar de Expedición: {factura.emisor.cp} • {factura.emisor.regimenFiscal}
+          Este documento es una representación impresa de un CFDI.{'  '}•{'  '}
+          Lugar de Expedición: {factura.emisor.cp}{'  '}•{'  '}
+          {factura.emisor.regimenFiscal}
         </Text>
+
       </Page>
     </Document>
   );

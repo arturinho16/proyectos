@@ -34,6 +34,7 @@ export async function POST(
     }
 
     await transporter.sendMail({
+     //cambio del remitente en el correo
       from: `"TuFisTi Facturación" <${process.env.GMAIL_USER}>`,
       to: emailDestino,
       subject: `Factura ${factura.serie ?? ''}${factura.folio} - ${factura.client?.nombreRazonSocial}`,

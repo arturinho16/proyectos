@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { FileText, PlusCircle, Search, Eye, Download, Mail, Loader2, X } from 'lucide-react';
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 type Concepto = {
@@ -59,7 +58,6 @@ const fmt = (n: number) =>
 const fmtFecha = (d: string) =>
   new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 
-// Datos fijos del emisor (de tu CIF)
 const EMISOR = {
   nombre: 'OMAR ARTURO CORONA MONROY',
   rfc: 'COMO891216CM1',
@@ -143,16 +141,11 @@ export default function FacturasPage() {
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
   const [expandida, setExpandida] = useState<string | null>(null);
-
-  // Estado para PDF
   const [descargando, setDescargando] = useState<string | null>(null);
-
-  // Estado para correo
   const [facturaCorreo, setFacturaCorreo] = useState<Factura | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [msgCorreo, setMsgCorreo] = useState('');
 
-  // ── Cargar facturas ──
   const cargar = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
@@ -168,12 +161,10 @@ export default function FacturasPage() {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  // ── Descargar PDF ──
   const handleDescargar = async (f: Factura, e: React.MouseEvent) => {
     e.stopPropagation();
     setDescargando(f.id);
     try {
-      // Importar dinámicamente para evitar SSR issues
       const { pdf } = await import('@react-pdf/renderer');
       const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF');
       const React = (await import('react')).default;
@@ -236,13 +227,11 @@ export default function FacturasPage() {
     }
   };
 
-  // ── Enviar correo ──
   const handleEnviarCorreo = async (correo: string) => {
     if (!facturaCorreo) return;
     setEnviando(true);
     setMsgCorreo('');
     try {
-      // Generar PDF como base64
       const { pdf } = await import('@react-pdf/renderer');
       const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF');
       const React = (await import('react')).default;
@@ -311,14 +300,12 @@ export default function FacturasPage() {
     }
   };
 
-  // ── Totales ──
   const totalGeneral = facturas
     .filter(f => f.estado !== 'CANCELADO')
     .reduce((acc, f) => acc + Number(f.total), 0);
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-800">
-      {/* Modal correo */}
       {facturaCorreo && (
         <ModalCorreo
           factura={facturaCorreo}
@@ -429,15 +416,12 @@ export default function FacturasPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {facturas.map(f => (
-                  <>
+                  <React.Fragment key={f.id}>
                     <tr
-                      key={f.id}
                       className="hover:bg-slate-50 cursor-pointer transition-colors"
                       onClick={() => setExpandida(expandida === f.id ? null : f.id)}
                     >
-                      <td className="px-4 py-3 font-mono font-bold text-blue-700">
-                        {f.serie}-{f.folio}
-                      </td>
+                      <td className="px-4 py-3 font-mono font-bold text-blue-700">{f.serie}-{f.folio}</td>
                       <td className="px-4 py-3 text-slate-500">{fmtFecha(f.fecha)}</td>
                       <td className="px-4 py-3 font-medium max-w-[180px] truncate">{f.client.nombreRazonSocial}</td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-400">{f.client.rfc}</td>
@@ -452,7 +436,6 @@ export default function FacturasPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                          {/* Ver detalle */}
                           <button
                             title="Ver detalle"
                             onClick={() => setExpandida(expandida === f.id ? null : f.id)}
@@ -460,8 +443,6 @@ export default function FacturasPage() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-
-                          {/* Descargar PDF */}
                           <button
                             title="Descargar PDF"
                             onClick={(e) => handleDescargar(f, e)}
@@ -473,8 +454,6 @@ export default function FacturasPage() {
                               : <Download className="w-4 h-4" />
                             }
                           </button>
-
-                          {/* Enviar por correo */}
                           <button
                             title="Enviar por correo"
                             onClick={(e) => {
@@ -490,7 +469,6 @@ export default function FacturasPage() {
                       </td>
                     </tr>
 
-                    {/* Fila expandida */}
                     {expandida === f.id && (
                       <tr key={`${f.id}-detail`} className="bg-blue-50/40">
                         <td colSpan={10} className="px-6 py-4">
@@ -513,7 +491,7 @@ export default function FacturasPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
