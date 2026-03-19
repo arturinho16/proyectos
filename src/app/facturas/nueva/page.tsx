@@ -1,17 +1,18 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { FileText, PlusCircle, Trash2, Search } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { FileText, PlusCircle, Trash2, Search, X, Mail, Download, Loader2, Eye } from 'lucide-react';
 import { REGIMENES_FISCALES, USOS_CFDI } from '@/lib/sat/catalogos';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 type Client = {
   id: string;
-  nombreRazonSocial: string;  // ✅ corregido (antes: nombre)
+  nombreRazonSocial: string;
   rfc: string;
   regimenFiscal: string;
-  cp: string;                 // ✅ corregido (antes: codigoPostal)
-  usoCfdiDefault?: string;    // ✅ corregido (antes: usoCFDI)
+  cp: string;
+  email?: string;
+  usoCfdiDefault?: string;
 };
 
 type Product = {
@@ -36,10 +37,27 @@ type Concepto = {
   cantidad: number;
   precioUnitario: number;
   descuento: number;
-  descuentoPct: number;       // ✅ nuevo: descuento como %
+  descuentoPct: number;
   ivaTasa: number;
   iepsTasa: number;
   objetoImpuesto: string;
+};
+
+type FacturaGuardada = {
+  id: string;
+  serie: string;
+  folio: string;
+  fecha: string;
+  formaPago: string;
+  metodoPago: string;
+  moneda: string;
+  subtotal: number;
+  totalIVA: number;
+  total: number;
+  estado: string;
+  uuid?: string;
+  client: Client;
+  conceptos: Concepto[];
 };
 
 // ─── Catálogos locales ────────────────────────────────────────────────────────
@@ -74,7 +92,22 @@ const MONEDAS = [
   { clave: 'EUR', descripcion: 'Euro' },
 ];
 
+const EMISOR = {
+  nombre: 'OMAR ARTURO CORONA MONROY',
+  rfc: 'COMO891216CM1',
+  direccion: 'Francisco Clavijero 106 Int. 2, Centro',
+  cp: '42000 HIDALGO',
+  regimenFiscal: '626 - Régimen Simplificado de Confianza',
+  telefono: '7712427953',
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+const fmt = (n: number) =>
+  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
+
+const fmtFecha = (d: string) =>
+  new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+
 const calcularConcepto = (c: Concepto) => {
   const importeBruto = c.cantidad * c.precioUnitario;
   const descuentoMonto = c.descuentoPct > 0
@@ -111,7 +144,6 @@ function ClienteSearch({
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState<Client | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   const filtered = query.length >= 1
@@ -130,7 +162,6 @@ function ClienteSearch({
   }, []);
 
   const handleSelect = (c: Client) => {
-    setSelected(c);
     setQuery(c.nombreRazonSocial);
     setOpen(false);
     onSelect(c);
@@ -142,7 +173,7 @@ function ClienteSearch({
         <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
         <input
           value={query}
-          onChange={e => { setQuery(e.target.value); setOpen(true); setSelected(null); }}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           placeholder="Buscar por nombre o RFC..."
           className="w-full pl-9 p-2.5 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
@@ -172,12 +203,242 @@ function ClienteSearch({
   );
 }
 
+// ─── Modal: Vista Previa + Envío ──────────────────────────────────────────────
+function ModalVistaPrevia({
+  factura,
+  onClose,
+  onDescargar,
+  descargando,
+}: {
+  factura: FacturaGuardada;
+  onClose: () => void;
+  onDescargar: () => void;
+  descargando: boolean;
+}) {
+  const [correo, setCorreo] = useState(factura.client.email || '');
+  const [enviando, setEnviando] = useState(false);
+  const [msgCorreo, setMsgCorreo] = useState('');
+
+  const subtotal = factura.conceptos.reduce((acc, c) => acc + calcularConcepto(c).importe, 0);
+  const totalIVA = factura.conceptos.reduce((acc, c) => acc + calcularConcepto(c).iva, 0);
+
+  const handleEnviar = async () => {
+    if (!correo) return;
+    setEnviando(true);
+    setMsgCorreo('');
+    try {
+      const { pdf } = await import('@react-pdf/renderer');
+      const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF');
+
+      const facturaData = {
+        folio: factura.folio,
+        serie: factura.serie,
+        fecha: fmtFecha(factura.fecha),
+        estado: factura.estado,
+        uuid: factura.uuid,
+        emisor: EMISOR,
+        receptor: {
+          nombre: factura.client.nombreRazonSocial,
+          rfc: factura.client.rfc,
+          cp: factura.client.cp,
+          usoCfdi: factura.client.usoCfdiDefault,
+          regimenFiscal: factura.client.regimenFiscal,
+        },
+        conceptos: factura.conceptos.map(c => ({
+          claveProdServ: c.claveProdServ || '01010101',
+          cantidad: Number(c.cantidad),
+          claveUnidad: c.claveUnidad || 'H87',
+          descripcion: c.descripcion,
+          valorUnitario: Number(c.precioUnitario),
+          importe: calcularConcepto(c).importe,
+          ivaTasa: c.ivaTasa,
+          objetoImpuesto: c.objetoImpuesto,
+        })),
+        subtotal: Number(factura.subtotal),
+        iva: Number(factura.totalIVA),
+        total: Number(factura.total),
+        moneda: factura.moneda || 'MXN - Peso Mexicano',
+        formaPago: factura.formaPago,
+        metodoPago: factura.metodoPago,
+      };
+
+      const blob = await pdf(
+        React.createElement(FacturaPDF, { factura: facturaData, logoUrl: '/logo-tufisti.png' })
+      ).toBlob();
+
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      reader.onloadend = async () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const res = await fetch(`/api/facturas/${factura.id}/enviar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ destinatario: correo, pdfBase64: base64 }),
+        });
+        const data = await res.json();
+        setMsgCorreo(data.ok ? `✅ Factura enviada a ${correo}` : `❌ ${data.error}`);
+        setEnviando(false);
+      };
+    } catch (err) {
+      console.error(err);
+      setMsgCorreo('❌ Error al generar o enviar el PDF');
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+
+        {/* Header modal */}
+        <div className="flex items-center justify-between p-6 border-b border-slate-200">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+              <FileText className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">✅ Factura Guardada</h2>
+              <p className="text-sm text-slate-400">
+                {factura.serie}-{factura.folio} · {fmtFecha(factura.fecha)}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-100">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Vista previa de la factura */}
+        <div className="p-6 space-y-4">
+
+          {/* Resumen emisor / receptor */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-slate-50 rounded-xl p-4 space-y-1">
+              <div className="text-xs font-bold uppercase text-slate-400 mb-2">Emisor</div>
+              <div className="font-bold text-sm text-slate-800">{EMISOR.nombre}</div>
+              <div className="text-xs font-mono text-slate-500">{EMISOR.rfc}</div>
+              <div className="text-xs text-slate-400">{EMISOR.regimenFiscal}</div>
+            </div>
+            <div className="bg-blue-50 rounded-xl p-4 space-y-1">
+              <div className="text-xs font-bold uppercase text-blue-500 mb-2">Receptor</div>
+              <div className="font-bold text-sm text-slate-800">{factura.client.nombreRazonSocial}</div>
+              <div className="text-xs font-mono text-slate-500">{factura.client.rfc}</div>
+              <div className="text-xs text-slate-400">CP: {factura.client.cp}</div>
+            </div>
+          </div>
+
+          {/* Conceptos */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
+              <span className="text-xs font-bold uppercase text-slate-400">Conceptos</span>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {factura.conceptos.map((c, i) => {
+                const { importe } = calcularConcepto(c);
+                return (
+                  <div key={i} className="px-4 py-3 flex justify-between items-center text-sm">
+                    <div>
+                      <div className="font-medium text-slate-800">{c.descripcion}</div>
+                      <div className="text-xs text-slate-400">
+                        {c.cantidad} × {fmt(c.precioUnitario)} · IVA {(c.ivaTasa * 100).toFixed(0)}%
+                      </div>
+                    </div>
+                    <div className="font-mono font-bold text-slate-700">{fmt(importe)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Totales */}
+          <div className="bg-slate-50 rounded-xl p-4 space-y-2">
+            <div className="flex justify-between text-sm text-slate-600">
+              <span>Subtotal</span>
+              <span className="font-mono">{fmt(subtotal)}</span>
+            </div>
+            <div className="flex justify-between text-sm text-slate-600">
+              <span>IVA 16%</span>
+              <span className="font-mono text-orange-500">{fmt(totalIVA)}</span>
+            </div>
+            <div className="flex justify-between text-lg font-bold text-blue-900 border-t border-slate-200 pt-2 mt-1">
+              <span>Total</span>
+              <span className="font-mono">{fmt(Number(factura.total))}</span>
+            </div>
+          </div>
+
+          {/* Sección envío por correo */}
+          <div className="border border-slate-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Mail className="w-4 h-4 text-purple-500" />
+              <span className="text-sm font-bold text-slate-700">Enviar por correo electrónico</span>
+              {factura.client.email && (
+                <span className="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded-full">
+                  correo del cliente cargado
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={correo}
+                onChange={e => setCorreo(e.target.value)}
+                placeholder="correo@ejemplo.com"
+                className="flex-1 p-2.5 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+              />
+              <button
+                onClick={handleEnviar}
+                disabled={enviando || !correo}
+                className="px-4 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 disabled:opacity-50 font-bold text-sm flex items-center gap-2 whitespace-nowrap"
+              >
+                {enviando
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando...</>
+                  : <><Mail className="w-4 h-4" /> Enviar</>
+                }
+              </button>
+            </div>
+            {msgCorreo && (
+              <p className={`text-sm font-medium ${msgCorreo.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>
+                {msgCorreo}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Footer modal */}
+        <div className="flex gap-3 p-6 border-t border-slate-200">
+          <button
+            onClick={onDescargar}
+            disabled={descargando}
+            className="flex-1 flex items-center justify-center gap-2 py-3 border border-slate-300 rounded-xl text-slate-700 hover:bg-slate-50 font-bold text-sm disabled:opacity-50"
+          >
+            {descargando
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Generando PDF...</>
+              : <><Download className="w-4 h-4" /> Descargar PDF</>
+            }
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold text-sm"
+          >
+            Nueva Factura
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 export default function NuevaFacturaPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [conceptos, setConceptos] = useState<Concepto[]>([conceptoVacio()]);
   const [submitting, setSubmitting] = useState(false);
+
+  // Modal vista previa
+  const [facturaGuardada, setFacturaGuardada] = useState<FacturaGuardada | null>(null);
+  const [descargando, setDescargando] = useState(false);
 
   // Encabezado
   const [clienteId, setClienteId] = useState('');
@@ -192,8 +453,6 @@ export default function NuevaFacturaPage() {
   const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 16));
   const [condicionesPago, setCondicionesPago] = useState('');
   const [notas, setNotas] = useState('');
-
-  // Retenciones
   const [retencionIVAPct, setRetencionIVAPct] = useState(0);
   const [retencionISRPct, setRetencionISRPct] = useState(0);
 
@@ -202,7 +461,6 @@ export default function NuevaFacturaPage() {
     fetch('/api/products').then(r => r.json()).then(d => setProducts(Array.isArray(d) ? d : []));
   }, []);
 
-  // ✅ Regla SAT: PPD → forzar forma de pago 99
   useEffect(() => {
     if (metodoPago === 'PPD') setFormaPago('99');
   }, [metodoPago]);
@@ -235,7 +493,6 @@ export default function NuevaFacturaPage() {
   const handleConceptoField = (index: number, field: keyof Concepto, value: any) => {
     const updated = [...conceptos];
     (updated[index] as any)[field] = value;
-    // Si cambia descuentoPct, limpiar descuento fijo y viceversa
     if (field === 'descuentoPct' && value > 0) updated[index].descuento = 0;
     if (field === 'descuento' && value > 0) updated[index].descuentoPct = 0;
     setConceptos(updated);
@@ -244,7 +501,6 @@ export default function NuevaFacturaPage() {
   const agregarConcepto = () => setConceptos([...conceptos, conceptoVacio()]);
   const eliminarConcepto = (i: number) => setConceptos(conceptos.filter((_, idx) => idx !== i));
 
-  // ─── Totales ───────────────────────────────────────────────────────────────
   const subtotal = conceptos.reduce((acc, c) => acc + calcularConcepto(c).importe, 0);
   const totalDescuentos = conceptos.reduce((acc, c) => acc + calcularConcepto(c).descuentoMonto, 0);
   const totalIVA = conceptos.reduce((acc, c) => acc + calcularConcepto(c).iva, 0);
@@ -252,6 +508,82 @@ export default function NuevaFacturaPage() {
   const retencionIVA = subtotal * (retencionIVAPct / 100);
   const retencionISR = subtotal * (retencionISRPct / 100);
   const total = subtotal + totalIVA + totalIEPS - retencionIVA - retencionISR;
+
+  const resetForm = (nuevoFolio: string) => {
+    setClienteId('');
+    setClienteData({});
+    setUsoCFDI('G03');
+    setFormaPago('03');
+    setMetodoPago('PUE');
+    setMoneda('MXN');
+    setTipoCambio(1);
+    setSerie('A');
+    setFolio(nuevoFolio);
+    setFecha(new Date().toISOString().slice(0, 16));
+    setCondicionesPago('');
+    setNotas('');
+    setRetencionIVAPct(0);
+    setRetencionISRPct(0);
+    setConceptos([conceptoVacio()]);
+  };
+
+  // ─── Descargar PDF desde el modal ─────────────────────────────────────────
+  const handleDescargarModal = async () => {
+    if (!facturaGuardada) return;
+    setDescargando(true);
+    try {
+      const { pdf } = await import('@react-pdf/renderer');
+      const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF');
+
+      const facturaData = {
+        folio: facturaGuardada.folio,
+        serie: facturaGuardada.serie,
+        fecha: fmtFecha(facturaGuardada.fecha),
+        estado: facturaGuardada.estado,
+        uuid: facturaGuardada.uuid,
+        emisor: EMISOR,
+        receptor: {
+          nombre: facturaGuardada.client.nombreRazonSocial,
+          rfc: facturaGuardada.client.rfc,
+          cp: facturaGuardada.client.cp,
+          usoCfdi: facturaGuardada.client.usoCfdiDefault,
+          regimenFiscal: facturaGuardada.client.regimenFiscal,
+        },
+        conceptos: facturaGuardada.conceptos.map(c => ({
+          claveProdServ: c.claveProdServ || '01010101',
+          cantidad: Number(c.cantidad),
+          claveUnidad: c.claveUnidad || 'H87',
+          descripcion: c.descripcion,
+          valorUnitario: Number(c.precioUnitario),
+          importe: calcularConcepto(c).importe,
+          ivaTasa: c.ivaTasa,
+          objetoImpuesto: c.objetoImpuesto,
+        })),
+        subtotal: Number(facturaGuardada.subtotal),
+        iva: Number(facturaGuardada.totalIVA),
+        total: Number(facturaGuardada.total),
+        moneda: facturaGuardada.moneda || 'MXN - Peso Mexicano',
+        formaPago: facturaGuardada.formaPago,
+        metodoPago: facturaGuardada.metodoPago,
+      };
+
+      const blob = await pdf(
+        React.createElement(FacturaPDF, { factura: facturaData, logoUrl: '/logo-tufisti.png' })
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Factura-${facturaGuardada.serie}${facturaGuardada.folio}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error generando PDF:', err);
+      alert('❌ Error al generar el PDF');
+    } finally {
+      setDescargando(false);
+    }
+  };
 
   // ─── Submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -277,24 +609,28 @@ export default function NuevaFacturaPage() {
     });
 
     setSubmitting(false);
+
     if (res.ok) {
-      alert('✅ Factura guardada correctamente');
-      // Limpiar formulario para nueva factura
-      setClienteId('');
-      setClienteData({});
-      setUsoCFDI('G03');
-      setFormaPago('03');
-      setMetodoPago('PUE');
-      setMoneda('MXN');
-      setTipoCambio(1);
-      setSerie('A');
-      setFolio(prev => String(parseInt(prev) + 1)); // auto-incrementar folio
-      setFecha(new Date().toISOString().slice(0, 16));
-      setCondicionesPago('');
-      setNotas('');
-      setRetencionIVAPct(0);
-      setRetencionISRPct(0);
-      setConceptos([conceptoVacio()]);
+      const data = await res.json();
+      // Construir objeto FacturaGuardada para el modal
+      const facturaParaModal: FacturaGuardada = {
+        id: data.id,
+        serie: data.serie ?? serie,
+        folio: data.folio ?? folio,
+        fecha: data.fecha ?? fecha,
+        formaPago: data.formaPago ?? formaPago,
+        metodoPago: data.metodoPago ?? metodoPago,
+        moneda: data.moneda ?? moneda,
+        subtotal: data.subtotal ?? subtotal,
+        totalIVA: data.totalIVA ?? totalIVA,
+        total: data.total ?? total,
+        estado: data.estado ?? 'BORRADOR',
+        uuid: data.uuid,
+        client: data.client ?? clienteData as Client,
+        conceptos: data.conceptos ?? conceptos,
+      };
+      setFacturaGuardada(facturaParaModal);
+      resetForm(String(parseInt(folio) + 1));
     } else {
       const err = await res.json().catch(() => ({}));
       alert(`❌ Error: ${err?.error || 'No se pudo guardar'}`);
@@ -304,6 +640,17 @@ export default function NuevaFacturaPage() {
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-800">
+
+      {/* Modal vista previa */}
+      {facturaGuardada && (
+        <ModalVistaPrevia
+          factura={facturaGuardada}
+          onClose={() => setFacturaGuardada(null)}
+          onDescargar={handleDescargarModal}
+          descargando={descargando}
+        />
+      )}
+
       <div className="max-w-6xl mx-auto space-y-6">
 
         {/* Header */}
@@ -427,10 +774,9 @@ export default function NuevaFacturaPage() {
 
           <div className="space-y-4">
             {conceptos.map((c, i) => {
-              const { importe, iva, ieps } = calcularConcepto(c);
+              const { importe, iva } = calcularConcepto(c);
               return (
                 <div key={i} className="p-4 border border-slate-200 rounded-2xl bg-slate-50 space-y-3">
-                  {/* Fila 1: Producto + Cantidad + Precio */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div className="space-y-1 md:col-span-2">
                       <label className="text-xs font-bold uppercase text-slate-500">Producto / Servicio</label>
@@ -466,7 +812,6 @@ export default function NuevaFacturaPage() {
                     </div>
                   </div>
 
-                  {/* Fila 2: Descripción editable */}
                   {c.productoId && (
                     <div className="space-y-1">
                       <label className="text-xs font-bold uppercase text-slate-500">Descripción <span className="text-slate-400 font-normal normal-case">(editable — aparece en el CFDI)</span></label>
@@ -478,7 +823,6 @@ export default function NuevaFacturaPage() {
                     </div>
                   )}
 
-                  {/* Fila 3: Claves SAT + Descuento + Totales */}
                   {c.productoId && (
                     <div className="grid grid-cols-2 md:grid-cols-6 gap-3 pt-2 border-t border-slate-200">
                       <div className="space-y-1">
@@ -604,7 +948,7 @@ export default function NuevaFacturaPage() {
             disabled={submitting}
             className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 disabled:opacity-50"
           >
-            {submitting ? 'Guardando...' : '💾 Guardar Factura'}
+            {submitting ? <><Loader2 className="w-5 h-5 animate-spin inline mr-2" />Guardando...</> : '💾 Guardar Factura'}
           </button>
         </div>
 
