@@ -307,9 +307,9 @@ export const FacturaPDF: React.FC<FacturaPDFProps> = ({ factura, logoUrl }) => {
                 Régimen Fiscal: {factura.emisor.regimenFiscal}
               </Text>
             )}
-            {factura.emisor.telefono && (
+            {/*{factura.emisor.telefono && (
               <Text style={styles.lineText}>Tel: {factura.emisor.telefono}</Text>
-            )}
+            )}*/}
             <Text style={styles.lineText}>Efecto del comprobante: I - Ingreso</Text>
           </View>
 

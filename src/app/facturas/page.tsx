@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, PlusCircle, Search, Eye, Download, Mail, Loader2, X } from 'lucide-react';
+import { FileText, PlusCircle, Search, Eye, Download, Mail, Loader2, X, Ban } from 'lucide-react';
 import Link from 'next/link';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -64,7 +64,6 @@ const EMISOR = {
   direccion: 'Francisco Clavijero 106 Int. 2, Centro',
   cp: '42000 HIDALGO',
   regimenFiscal: '626 - Régimen Simplificado de Confianza',
-  telefono: '7712427953',
 };
 
 // ─── Modal de correo ──────────────────────────────────────────────────────────
@@ -145,6 +144,7 @@ export default function FacturasPage() {
   const [facturaCorreo, setFacturaCorreo] = useState<Factura | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [msgCorreo, setMsgCorreo] = useState('');
+  const [cancelando, setCancelando] = useState<string | null>(null); // ← nuevo
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -297,6 +297,26 @@ export default function FacturasPage() {
       console.error('Error:', err);
       setMsgCorreo('❌ Error al generar o enviar el PDF');
       setEnviando(false);
+    }
+  };
+
+  // ── Cancelar factura ──────────────────────────────────────────────────────
+  const handleCancelar = async (f: Factura, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`¿Cancelar la factura ${f.serie}-${f.folio}?\nEsta acción no se puede deshacer.`)) return;
+    setCancelando(f.id);
+    try {
+      const res = await fetch(`/api/facturas/${f.id}/cancelar`, { method: 'PATCH' });
+      if (res.ok) {
+        await cargar();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`❌ ${err.error || 'No se pudo cancelar la factura'}`);
+      }
+    } catch {
+      alert('❌ Error de conexión al cancelar');
+    } finally {
+      setCancelando(null);
     }
   };
 
@@ -465,6 +485,20 @@ export default function FacturasPage() {
                           >
                             <Mail className="w-4 h-4" />
                           </button>
+                          {/* ── Botón Cancelar ── */}
+                          {f.estado !== 'CANCELADO' && (
+                            <button
+                              title="Cancelar factura"
+                              onClick={(e) => handleCancelar(f, e)}
+                              disabled={cancelando === f.id}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                            >
+                              {cancelando === f.id
+                                ? <Loader2 className="w-4 h-4 animate-spin text-red-500" />
+                                : <Ban className="w-4 h-4" />
+                              }
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
