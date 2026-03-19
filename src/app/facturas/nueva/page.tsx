@@ -52,9 +52,19 @@ const FORMAS_PAGO = [
   { clave: '06', descripcion: 'Dinero electrónico' },
   { clave: '08', descripcion: 'Vales de despensa' },
   { clave: '12', descripcion: 'Dación en pago' },
+  { clave: '13', descripcion: 'Pago por subrogación' },
+  { clave: '14', descripcion: 'Pago por consignación' },
+  { clave: '15', descripcion: 'Condonación' },
+  { clave: '17', descripcion: 'Compensación' },
+  { clave: '23', descripcion: 'Novación' },
+  { clave: '24', descripcion: 'Confusión' },
+  { clave: '25', descripcion: 'Remisión de deuda' },
+  { clave: '26', descripcion: 'Prescripción o caducidad' },
+  { clave: '27', descripcion: 'A satisfacción del acreedor' },
   { clave: '28', descripcion: 'Tarjeta de débito' },
   { clave: '29', descripcion: 'Tarjeta de servicios' },
   { clave: '30', descripcion: 'Aplicación de anticipos' },
+  { clave: '31', descripcion: 'Intermediario pagos' },
   { clave: '99', descripcion: 'Por definir' },
 ];
 
@@ -269,7 +279,22 @@ export default function NuevaFacturaPage() {
     setSubmitting(false);
     if (res.ok) {
       alert('✅ Factura guardada correctamente');
-      window.history.back();
+      // Limpiar formulario para nueva factura
+      setClienteId('');
+      setClienteData({});
+      setUsoCFDI('G03');
+      setFormaPago('03');
+      setMetodoPago('PUE');
+      setMoneda('MXN');
+      setTipoCambio(1);
+      setSerie('A');
+      setFolio(prev => String(parseInt(prev) + 1)); // auto-incrementar folio
+      setFecha(new Date().toISOString().slice(0, 16));
+      setCondicionesPago('');
+      setNotas('');
+      setRetencionIVAPct(0);
+      setRetencionISRPct(0);
+      setConceptos([conceptoVacio()]);
     } else {
       const err = await res.json().catch(() => ({}));
       alert(`❌ Error: ${err?.error || 'No se pudo guardar'}`);
