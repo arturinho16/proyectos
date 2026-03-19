@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { FileText, PlusCircle, Trash2, Search, X, Mail, Download, Loader2, Eye } from 'lucide-react';
+import { FileText, PlusCircle, Trash2, Search, X, Mail, Download, Loader2, Eye, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 import { REGIMENES_FISCALES, USOS_CFDI } from '@/lib/sat/catalogos';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -654,10 +655,13 @@ export default function NuevaFacturaPage() {
       <div className="max-w-6xl mx-auto space-y-6">
 
         {/* Header */}
-        <div className="flex items-center gap-3 mb-2">
-          <FileText className="w-8 h-8 text-blue-600" />
-          <h1 className="text-3xl font-bold">Nueva Factura</h1>
-          <span className="ml-auto text-sm text-slate-400">CFDI 4.0 — Ingreso</span>
+        <div className="flex items-center gap-3 mb-2 flex-wrap">
+          <Link href="/" className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 font-bold text-sm transition-colors">
+            <ArrowLeft className="w-4 h-4" /> Panel
+          </Link>
+          <FileText className="w-7 h-7 text-blue-600 ml-1" />
+          <h1 className="text-2xl sm:text-3xl font-bold">Nueva Factura</h1>
+          <span className="ml-auto text-xs sm:text-sm text-slate-400">CFDI 4.0 — Ingreso</span>
         </div>
 
         {/* BLOQUE 1: Encabezado */}

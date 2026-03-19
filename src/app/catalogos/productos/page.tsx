@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Package, PlusCircle, X } from 'lucide-react';
+import { Package, PlusCircle, X, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 
 export default function ProductosPage() {
   const [products, setProducts] = useState([]);
@@ -47,6 +48,9 @@ export default function ProductosPage() {
 
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 font-bold text-sm transition-colors mr-2">
+              <ArrowLeft className="w-4 h-4" /> Panel
+            </Link>
             <Package className="w-8 h-8 text-blue-600" />
             <h1 className="text-3xl font-bold">Catálogo de Productos</h1>
           </div>

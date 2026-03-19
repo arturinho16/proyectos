@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, PlusCircle, Search, Eye, Download, Mail, Loader2, X, Ban } from 'lucide-react';
+import { FileText, PlusCircle, Search, Eye, Download, Mail, Loader2, X, Ban, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -144,7 +144,7 @@ export default function FacturasPage() {
   const [facturaCorreo, setFacturaCorreo] = useState<Factura | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [msgCorreo, setMsgCorreo] = useState('');
-  const [cancelando, setCancelando] = useState<string | null>(null); // ← nuevo
+  const [cancelando, setCancelando] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -300,7 +300,6 @@ export default function FacturasPage() {
     }
   };
 
-  // ── Cancelar factura ──────────────────────────────────────────────────────
   const handleCancelar = async (f: Factura, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm(`¿Cancelar la factura ${f.serie}-${f.folio}?\nEsta acción no se puede deshacer.`)) return;
@@ -340,7 +339,10 @@ export default function FacturasPage() {
 
         {/* Header */}
         <div className="flex items-center gap-3">
-          <FileText className="w-8 h-8 text-blue-600" />
+          <Link href="/" className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 font-bold text-sm transition-colors">
+            <ArrowLeft className="w-4 h-4" /> Panel
+          </Link>
+          <FileText className="w-8 h-8 text-blue-600 ml-2" />
           <h1 className="text-3xl font-bold">Facturas</h1>
           <Link
             href="/facturas/nueva"
@@ -485,7 +487,6 @@ export default function FacturasPage() {
                           >
                             <Mail className="w-4 h-4" />
                           </button>
-                          {/* ── Botón Cancelar ── */}
                           {f.estado !== 'CANCELADO' && (
                             <button
                               title="Cancelar factura"

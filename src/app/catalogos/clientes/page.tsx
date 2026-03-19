@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Users, Upload, UserPlus, X, Trash2, Edit } from 'lucide-react';
+import { Users, Upload, UserPlus, X, Trash2, Edit, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 import { REGIMENES_FISCALES, USOS_CFDI } from '@/lib/sat/catalogos';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -362,12 +363,17 @@ export default function ClientesPage() {
       <div className="max-w-6xl mx-auto">
 
         {/* Header */}
+
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 font-bold text-sm transition-colors mr-2">
+              <ArrowLeft className="w-4 h-4" /> Panel
+            </Link>
             <Users className="w-8 h-8 text-blue-600" />
             <h1 className="text-3xl font-bold">Catálogo de Clientes</h1>
           </div>
           <div className="flex gap-3">
+
             <label className="flex items-center gap-2 bg-white border-2 border-blue-300 text-blue-700 font-bold px-4 py-2 rounded-xl cursor-pointer hover:bg-blue-50 transition-all">
               <Upload className="w-4 h-4" />
               Subir CIF (PDF)
