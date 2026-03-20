@@ -38,8 +38,9 @@ export default function DashboardPage() {
         const facturas = await facturasRes.json();
         const clientes = await clientesRes.json();
 
+
         const emitidas = facturas.filter((f: any) => f.estado !== 'CANCELADA');
-        const totalFacturado = emitidas.reduce((sum: number, f: any) => sum + (f.total || 0), 0);
+        const totalFacturado = emitidas.reduce((sum: number, f: any) => sum + parseFloat(f.total || '0'), 0);
         const pendientesPago = facturas.filter((f: any) =>
           f.estado === 'BORRADOR' || f.estado === 'ENVIADA'
         ).length;
