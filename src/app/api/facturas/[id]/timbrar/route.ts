@@ -21,13 +21,16 @@ const CSD_RFC = process.env.CSD_RFC!
 function getNoCertificado(): string {
   try {
     const certDer = Buffer.from(CSD_CERT_B64, 'base64')
-    const cert = new X509Certificate(certDer)
-    // serialNumber viene en HEX, convertir a decimal string de 20 dígitos
-    const hexSerial = cert.serialNumber.replace(/:/g, '').replace(/\s/g, '')
-    const decimal = BigInt('0x' + hexSerial).toString()
-    return decimal.padStart(20, '0')
+    // Buscar INTEGER de exactamente 20 bytes (0x02 0x14) = serial SAT
+    for (let i = 0; i < certDer.length - 22; i++) {
+      if (certDer[i] === 0x02 && certDer[i + 1] === 0x14) {
+        const hexStr = certDer.slice(i + 2, i + 22).toString('hex')
+        return BigInt('0x' + hexStr).toString().padStart(20, '0')
+      }
+    }
+    return '300010000500003416'
   } catch {
-    return process.env.CSD_NO_CERTIFICADO ?? '300010000500003416'
+    return '300010000500003416'
   }
 }
 
@@ -254,29 +257,46 @@ async function llamarStamp(xmlBase64: string) {
   </SOAP-ENV:Body>
 </SOAP-ENV:Envelope>`
 
-  const res = await fetch(FINKOK_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/xml; charset=utf-8',
-      SOAPAction: '"http://facturacion.finkok.com/stamp/stamp"',
-    },
-    body: soapBody,
-    signal: AbortSignal.timeout(30000), // 30 segundos máximo
-  })
+  const MAX_INTENTOS = 3
+  let lastError: any
 
-  const text = await res.text()
-  console.log('📨 FINKOK stamp response:\n', text)
+  for (let intento = 1; intento <= MAX_INTENTOS; intento++) {
+    try {
+      console.log(`🔄 FINKOK intento ${intento}/${MAX_INTENTOS}`)
+      const res = await fetch(FINKOK_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8',
+          SOAPAction: '"http://facturacion.finkok.com/stamp/stamp"',
+        },
+        body: soapBody,
+        signal: AbortSignal.timeout(25000),
+      })
 
-  const uuid = text.match(/<[^:]*:?UUID>([^<]+)<\/[^:]*:?UUID>/i)?.[1]
-  const xmlResult = text.match(/<[^:]*:?xml>([^<]*)<\/[^:]*:?xml>/i)?.[1]
-  const codEstatus = text.match(/<[^:]*:?CodEstatus>([^<]+)<\/[^:]*:?CodEstatus>/i)?.[1]
-  const mensaje = text.match(/<[^:]*:?MensajeIncidencia>([^<]+)<\/[^:]*:?MensajeIncidencia>/i)?.[1]
-  const codigo = text.match(/<[^:]*:?CodigoError>([^<]+)<\/[^:]*:?CodigoError>/i)?.[1]
+      const text = await res.text()
+      console.log('📨 FINKOK stamp response:\n', text)
 
-  if (!uuid) {
-    return { error: `[${codigo ?? 'ERROR'}] ${mensaje ?? 'Error desconocido'}`, codEstatus }
+      const uuid = text.match(/<[^:]*:?UUID>([^<]+)<\/[^:]*:?UUID>/i)?.[1]
+      const xmlResult = text.match(/<[^:]*:?xml>([^<]*)<\/[^:]*:?xml>/i)?.[1]
+      const codEstatus = text.match(/<[^:]*:?CodEstatus>([^<]+)<\/[^:]*:?CodEstatus>/i)?.[1]
+      const mensaje = text.match(/<[^:]*:?MensajeIncidencia>([^<]+)<\/[^:]*:?MensajeIncidencia>/i)?.[1]
+      const codigo = text.match(/<[^:]*:?CodigoError>([^<]+)<\/[^:]*:?CodigoError>/i)?.[1]
+
+      if (!uuid) {
+        return { error: `[${codigo ?? 'ERROR'}] ${mensaje ?? 'Error desconocido'}`, codEstatus }
+      }
+      return { uuid, xmlTimbrado: xmlResult, codEstatus }
+
+    } catch (err: any) {
+      lastError = err
+      if (intento < MAX_INTENTOS) {
+        console.log(`⚠️ Timeout intento ${intento}, esperando 3s...`)
+        await new Promise(r => setTimeout(r, 3000))
+      }
+    }
   }
-  return { uuid, xmlTimbrado: xmlResult, codEstatus }
+
+  throw lastError
 }
 
 // ─── POST /api/facturas/[id]/timbrar ─────────────────────────────────────────
