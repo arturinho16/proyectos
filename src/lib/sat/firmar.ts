@@ -34,10 +34,13 @@ export function getNoCertificado(cerB64: string): string {
   const der = forge.util.decode64(cerB64);
   const asn1 = forge.asn1.fromDer(der);
   const cert = forge.pki.certificateFromAsn1(asn1);
-  // El serial viene en hex, lo convertimos a decimal string
-  return BigInt('0x' + cert.serialNumber).toString();
+  // El SAT espera el serial en HEX con padding par (20 caracteres)
+  let serial = cert.serialNumber;
+  if (serial.length % 2 !== 0) serial = '0' + serial;
+  // Convertir hex a string de dígitos decimales alternos (formato SAT)
+  return serial.replace(/../g, (h) => String.fromCharCode(parseInt(h, 16)))
+    .split('').filter(c => /\d/.test(c)).join('');
 }
-
 /**
  * Extrae el contenido del .cer en base64 limpio (para el atributo Certificado del XML)
  */

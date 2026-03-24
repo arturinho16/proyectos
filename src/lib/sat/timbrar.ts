@@ -255,13 +255,15 @@ export async function timbrarFactura(datos: DatosFactura): Promise<{
   });
 
   const stampResult = result?.stampResult;
-
+  console.log('🔍 FINKOK respuesta completa:', JSON.stringify(result, null, 2));
   if (!stampResult) throw new Error('FINKOK no devolvió respuesta');
 
   // CodEstatus 300 = éxito
   if (stampResult.CodEstatus !== '300') {
-    const incidencia = stampResult.Incidencias?.Incidencia;
-    const mensaje = incidencia?.MensajeIncidencia || stampResult.CodEstatus;
+    const incidencias = stampResult.Incidencias?.Incidencia;
+    // Puede ser array o objeto único
+    const incidencia = Array.isArray(incidencias) ? incidencias[0] : incidencias;
+    const mensaje = incidencia?.MensajeIncidencia || `Código: ${stampResult.CodEstatus}`;
     throw new Error(`Error FINKOK: ${mensaje}`);
   }
 
