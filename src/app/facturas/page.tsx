@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, PlusCircle, Search, Eye, Download, Mail, Loader2, X, Ban, ArrowLeft } from 'lucide-react';
+import { FileText, PlusCircle, Search, Eye, Download, Mail, Loader2, X, Ban, ArrowLeft, Stamp, Copy, Check } from 'lucide-react';
 import Link from 'next/link';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -145,6 +145,8 @@ export default function FacturasPage() {
   const [enviando, setEnviando] = useState(false);
   const [msgCorreo, setMsgCorreo] = useState('');
   const [cancelando, setCancelando] = useState<string | null>(null);
+  const [timbrando, setTimbrando] = useState<string | null>(null);
+  const [copiado, setCopiado] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -319,6 +321,34 @@ export default function FacturasPage() {
     }
   };
 
+  // ── NUEVO: Copiar al portapapeles ──
+  const handleCopiar = (texto: string, id: string) => {
+    navigator.clipboard.writeText(texto);
+    setCopiado(id);
+    setTimeout(() => setCopiado(null), 2000);
+  };
+
+  // ── NUEVO: Timbrar factura ──
+  const handleTimbrar = async (f: Factura, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`¿Timbrar la factura ${f.serie}-${f.folio}?\nEsta acción enviará el CFDI al SAT.`)) return;
+    setTimbrando(f.id);
+    try {
+      const res = await fetch(`/api/facturas/${f.id}/timbrar`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        alert(`✅ Timbrado exitoso\nUUID: ${data.uuid}`);
+        await cargar();
+      } else {
+        alert(`❌ Error: ${data.error}`);
+      }
+    } catch {
+      alert('❌ Error de conexión al timbrar');
+    } finally {
+      setTimbrando(null);
+    }
+  };
+
   const totalGeneral = facturas
     .filter(f => f.estado !== 'CANCELADO')
     .reduce((acc, f) => acc + Number(f.total), 0);
@@ -487,6 +517,20 @@ export default function FacturasPage() {
                           >
                             <Mail className="w-4 h-4" />
                           </button>
+                          {/* ── NUEVO: Botón Timbrar (solo BORRADOR) ── */}
+                          {f.estado === 'BORRADOR' && (
+                            <button
+                              title="Timbrar factura"
+                              onClick={(e) => handleTimbrar(f, e)}
+                              disabled={timbrando === f.id}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+                            >
+                              {timbrando === f.id
+                                ? <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                                : <Stamp className="w-4 h-4" />
+                              }
+                            </button>
+                          )}
                           {f.estado !== 'CANCELADO' && (
                             <button
                               title="Cancelar factura"
@@ -522,6 +566,21 @@ export default function FacturasPage() {
                             {f.uuid && (
                               <div className="text-xs font-mono text-green-600 mt-1">UUID: {f.uuid}</div>
                             )}
+                            {/* ── NUEVO: ID interno con botón copiar ── */}
+                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-100">
+                              <span className="text-xs font-bold uppercase text-slate-400">ID interno:</span>
+                              <span className="text-xs font-mono text-slate-500 truncate">{f.id}</span>
+                              <button
+                                onClick={() => handleCopiar(f.id, f.id)}
+                                className="ml-auto p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                                title="Copiar ID"
+                              >
+                                {copiado === f.id
+                                  ? <Check className="w-3.5 h-3.5 text-green-500" />
+                                  : <Copy className="w-3.5 h-3.5" />
+                                }
+                              </button>
+                            </div>
                           </div>
                         </td>
                       </tr>
