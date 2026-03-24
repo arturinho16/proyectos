@@ -80,7 +80,7 @@ export async function POST(
     const { uuid, xmlTimbrado } = await timbrarFactura(datos);
     console.log(`✅ Timbrado exitoso. UUID: ${uuid}`);
 
-    // 4. Actualizar la factura en BD
+    // 4. Actualizar la factura en Base de Datos
     const facturaActualizada = await prisma.factura.update({
       where: { id },
       data: {
