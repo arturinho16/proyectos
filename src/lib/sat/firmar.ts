@@ -15,12 +15,14 @@ export function cerToPem(cerB64: string): string {
  */
 export function keyToPem(keyB64: string, password: string): string {
   const keyDer = forge.util.decode64(keyB64);
-  const keyAsn1 = forge.asn1.fromDer(keyDer);
-  const encryptedKey = forge.pki.encryptedPrivateKeyFromAsn1(keyAsn1);
-  const privateKey = forge.pki.decryptRsaPrivateKey(
-    forge.pki.encryptedPrivateKeyToPem(encryptedKey),
-    password
-  );
+
+  // Convertir DER a PEM encriptado manualmente (compatible con todas las versiones de node-forge)
+  const keyPemEncriptado = forge.util.encode64(keyDer);
+  const pemEncriptado = `-----BEGIN ENCRYPTED PRIVATE KEY-----\n${keyPemEncriptado.match(/.{1,64}/g)!.join('\n')}\n-----END ENCRYPTED PRIVATE KEY-----`;
+
+  // Desencriptar con la contraseña
+  const privateKey = forge.pki.decryptRsaPrivateKey(pemEncriptado, password);
+
   if (!privateKey) throw new Error('No se pudo desencriptar la llave privada. Verifica la contraseña.');
   return forge.pki.privateKeyToPem(privateKey);
 }
