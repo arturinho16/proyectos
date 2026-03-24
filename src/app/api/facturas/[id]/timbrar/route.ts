@@ -75,9 +75,9 @@ function buildXML(factura: any): string {
   const fecha = now.toISOString().slice(0, 19)
 
   // Datos del emisor (siempre el RFC de pruebas en demo)
-  const emisorRfc = CSD_RFC                          // EKU9003173C9
-  const emisorNombre = factura.emisor.nombre            // ESCUELA KEMPER URGATE
-  const emisorRegimen = factura.emisor.regimenFiscal    // 601
+  const emisorRfc = CSD_RFC                                    // EKU9003173C9
+  const emisorNombre = process.env.EMISOR_NOMBRE ?? 'ESCUELA KEMPER URGATE SA DE CV'
+  const emisorRegimen = process.env.EMISOR_REGIMEN ?? '601'
 
   // Cadena original simplificada para sellado
   const cadenaData = {
@@ -97,11 +97,11 @@ function buildXML(factura: any): string {
     emisorRfc,
     emisorNombre,
     emisorRegimen,
-    receptorRfc: factura.receptor.rfc,
-    receptorNombre: factura.receptor.nombre,
-    receptorDomicilio: factura.receptor.domicilioFiscal,
-    receptorRegimen: factura.receptor.regimenFiscal,
-    receptorUsoCFDI: factura.receptor.usoCFDI,
+    receptorRfc: factura.client.rfc,
+    receptorNombre: factura.client.nombreRazonSocial,
+    receptorDomicilio: factura.client.cp,
+    receptorRegimen: factura.client.regimenFiscal,
+    receptorUsoCFDI: factura.usoCFDI,
   }
 
   const cadenaOriginal = buildCadenaOriginal(cadenaData)
@@ -117,34 +117,57 @@ function buildXML(factura: any): string {
       '@_Cantidad': c.cantidad,
       '@_ClaveUnidad': c.claveUnidad,
       '@_Descripcion': c.descripcion,
-      '@_ValorUnitario': c.valorUnitario.toFixed(6),
-      '@_Importe': c.importe.toFixed(6),
-      '@_ObjetoImp': c.objetoImp ?? '02',
+      '@_ValorUnitario': Number(c.precioUnitario).toFixed(6),
+      '@_Importe': Number(c.importe).toFixed(6),
+      '@_ObjetoImp': c.objetoImpuesto ?? '02',
     }
     if (c.noIdentificacion) concepto['@_NoIdentificacion'] = c.noIdentificacion
     if (c.unidad) concepto['@_Unidad'] = c.unidad
 
-    if (c.traslados?.length > 0) {
+    // Impuestos calculados desde los campos del concepto (no hay tabla Traslado)
+    const base = Number(c.importe)
+    const ivaTasa = Number(c.ivaTasa)
+    const iepsTasa = Number(c.iepsTasa)
+    const traslados: any[] = []
+    if (ivaTasa > 0) {
+      traslados.push({
+        '@_Base': base.toFixed(6),
+        '@_Impuesto': '002',
+        '@_TipoFactor': 'Tasa',
+        '@_TasaOCuota': ivaTasa.toFixed(6),
+        '@_Importe': (base * ivaTasa).toFixed(6),
+      })
+    }
+    if (iepsTasa > 0) {
+      traslados.push({
+        '@_Base': base.toFixed(6),
+        '@_Impuesto': '003',
+        '@_TipoFactor': 'Tasa',
+        '@_TasaOCuota': iepsTasa.toFixed(6),
+        '@_Importe': (base * iepsTasa).toFixed(6),
+      })
+    }
+    if (traslados.length > 0) {
       concepto['cfdi:Impuestos'] = {
-        'cfdi:Traslados': {
-          'cfdi:Traslado': c.traslados.map((t: any) => ({
-            '@_Base': t.base.toFixed(6),
-            '@_Impuesto': t.impuesto,
-            '@_TipoFactor': t.tipoFactor,
-            '@_TasaOCuota': t.tasaOCuota.toFixed(6),
-            '@_Importe': t.importe.toFixed(6),
-          })),
-        },
+        'cfdi:Traslados': { 'cfdi:Traslado': traslados },
       }
     }
     return concepto
   })
 
-  // Totales de impuestos agrupados
+  // Totales de impuestos agrupados (calculados desde conceptos)
   const trasladosAgrupados = factura.conceptos
-    .flatMap((c: any) => c.traslados ?? [])
+    .flatMap((c: any) => {
+      const base = Number(c.importe)
+      const result: any[] = []
+      if (Number(c.ivaTasa) > 0)
+        result.push({ impuesto: '002', tasa: Number(c.ivaTasa), base, importe: base * Number(c.ivaTasa) })
+      if (Number(c.iepsTasa) > 0)
+        result.push({ impuesto: '003', tasa: Number(c.iepsTasa), base, importe: base * Number(c.iepsTasa) })
+      return result
+    })
     .reduce((acc: any[], t: any) => {
-      const key = `${t.impuesto}-${t.tipoFactor}-${t.tasaOCuota}`
+      const key = `${t.impuesto}-${t.tasa}`
       const ex = acc.find((x) => x._key === key)
       if (ex) {
         ex['@_Importe'] = (parseFloat(ex['@_Importe']) + t.importe).toFixed(6)
@@ -154,8 +177,8 @@ function buildXML(factura: any): string {
           _key: key,
           '@_Base': t.base.toFixed(6),
           '@_Impuesto': t.impuesto,
-          '@_TipoFactor': t.tipoFactor,
-          '@_TasaOCuota': t.tasaOCuota.toFixed(6),
+          '@_TipoFactor': 'Tasa',
+          '@_TasaOCuota': t.tasa.toFixed(6),
           '@_Importe': t.importe.toFixed(6),
         })
       }
@@ -270,9 +293,10 @@ export async function POST(
     const factura = await prisma.factura.findUnique({
       where: { id: facturaId },
       include: {
-        emisor: true,
-        receptor: true,
-        conceptos: { include: { traslados: true } },
+        client: true,
+        //emisor: true,
+        ///receptor: true,
+        conceptos: true,
       },
     })
 
@@ -310,7 +334,7 @@ export async function POST(
         uuid: resultado.uuid,
         xmlTimbrado: resultado.xmlTimbrado,
         estado: 'TIMBRADA',
-        fechaTimbrado: new Date(),
+        //fechaTimbrado: new Date(),
       },
     })
 
