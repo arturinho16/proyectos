@@ -22,7 +22,10 @@ function getNoCertificado(): string {
   try {
     const certDer = Buffer.from(CSD_CERT_B64, 'base64')
     const cert = new X509Certificate(certDer)
-    return cert.serialNumber.replace(/\s/g, '').padStart(20, '0')
+    // serialNumber viene en HEX, convertir a decimal string de 20 dígitos
+    const hexSerial = cert.serialNumber.replace(/:/g, '').replace(/\s/g, '')
+    const decimal = BigInt('0x' + hexSerial).toString()
+    return decimal.padStart(20, '0')
   } catch {
     return process.env.CSD_NO_CERTIFICADO ?? '300010000500003416'
   }
@@ -258,6 +261,7 @@ async function llamarStamp(xmlBase64: string) {
       SOAPAction: '"http://facturacion.finkok.com/stamp/stamp"',
     },
     body: soapBody,
+    signal: AbortSignal.timeout(30000), // 30 segundos máximo
   })
 
   const text = await res.text()
