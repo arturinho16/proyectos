@@ -19,19 +19,7 @@ const CSD_RFC = process.env.CSD_RFC!
 
 // ─── Extraer NoCertificado del CSD ───────────────────────────────────────────
 function getNoCertificado(): string {
-  try {
-    const certDer = Buffer.from(CSD_CERT_B64, 'base64')
-    // Buscar INTEGER de exactamente 20 bytes (0x02 0x14) = serial SAT
-    for (let i = 0; i < certDer.length - 22; i++) {
-      if (certDer[i] === 0x02 && certDer[i + 1] === 0x14) {
-        const hexStr = certDer.slice(i + 2, i + 22).toString('hex')
-        return BigInt('0x' + hexStr).toString().padStart(20, '0')
-      }
-    }
-    return '300010000500003416'
-  } catch {
-    return '300010000500003416'
-  }
+  return process.env.CSD_NO_CERTIFICADO ?? '300010000500003416'
 }
 
 // ─── Cadena Original CFDI 4.0 ────────────────────────────────────────────────
@@ -95,7 +83,7 @@ function buildXML(factura: any): string {
     Exportacion: '01',
     MetodoPago: factura.metodoPago,
     FormaPago: factura.formaPago,
-    LugarExpedicion: factura.lugarExpedicion,
+    LugarExpedicion: factura.lugarExpedicion = '62964',
     emisorRfc,
     emisorNombre,
     emisorRegimen,
