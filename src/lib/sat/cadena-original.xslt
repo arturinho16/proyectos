@@ -28,9 +28,6 @@
     <xsl:call-template name="Requerido">
       <xsl:with-param name="valor" select="@Fecha"/>
     </xsl:call-template>
-    <xsl:call-template name="Opcional">
-      <xsl:with-param name="valor" select="@FormaPago"/>
-    </xsl:call-template>
     <xsl:call-template name="Requerido">
       <xsl:with-param name="valor" select="@NoCertificado"/>
     </xsl:call-template>
@@ -63,6 +60,9 @@
     </xsl:call-template>
     <xsl:call-template name="Opcional">
       <xsl:with-param name="valor" select="@CondicionesDePago"/>
+    </xsl:call-template>
+    <xsl:call-template name="Opcional">
+      <xsl:with-param name="valor" select="@FormaPago"/>
     </xsl:call-template>
     <xsl:apply-templates select="cfdi:Emisor"/>
     <xsl:apply-templates select="cfdi:Receptor"/>
