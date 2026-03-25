@@ -7,11 +7,11 @@ import { join } from 'path'
 // @ts-ignore — xslt-processor no tiene tipos oficiales
 import { Xslt, XmlParser } from 'xslt-processor'
 
-// ─── Config FINKOK ────────────────────────────────────────────────────────────
+// ─── Config FINKOK de prueba o demo ────────────────────────────────────────────────────────────
 const FINKOK_ENDPOINT =
   process.env.FINKOK_AMBIENTE === 'produccion'
-    ? 'https://facturacion.finkok.com/servicios/soap/stamp.wsdl'
-    : 'https://demo-facturacion.finkok.com/servicios/soap/stamp.wsdl'
+    ? 'https://facturacion.finkok.com/servicios/soap/stamp'
+    : 'https://demo-facturacion.finkok.com/servicios/soap/stamp'
 
 const FINKOK_USER = process.env.FINKOK_USUARIO!
 const FINKOK_PASS = process.env.FINKOK_PASSWORD!
@@ -268,7 +268,7 @@ async function llamarStamp(xmlBase64: string) {
         method: 'POST',
         headers: {
           'Content-Type': 'text/xml; charset=utf-8',
-          SOAPAction: '"http://facturacion.finkok.com/stamp/stamp"',
+          SOAPAction: 'stamp',
         },
         body: soapBody,
         signal: AbortSignal.timeout(25000),
