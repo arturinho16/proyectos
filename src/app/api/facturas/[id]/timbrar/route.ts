@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { XMLBuilder } from 'fast-xml-parser'
 import { createSign, X509Certificate } from 'crypto'
+import { readFileSync } from 'fs'
+import { join } from 'path'
+// @ts-ignore — xslt-processor no tiene tipos oficiales
+import { XsltProcessor, xmlParse } from 'xslt-processor'
 
 // ─── Config FINKOK ────────────────────────────────────────────────────────────
 const FINKOK_ENDPOINT =
@@ -17,6 +21,11 @@ const CSD_KEY_B64 = process.env.CSD_LLAVE_B64!.replace(/\s+/g, '')
 const CSD_PASS = process.env.CSD_PASSWORD!
 const CSD_RFC = process.env.CSD_RFC!
 
+// ─── Cargar XSLT SAT una sola vez (módulo-level cache) ───────────────────────
+const XSLT_PATH = join(process.cwd(), 'src/lib/sat/cadena-original.xslt')
+const xsltString = readFileSync(XSLT_PATH, 'utf-8')
+const xsltDoc = xmlParse(xsltString)
+
 // ─── Helpers CSD / Fecha ─────────────────────────────────────────────────────
 function derBase64ToPem(base64: string, label: 'CERTIFICATE'): string {
   const clean = base64.replace(/\s+/g, '')
@@ -27,14 +36,11 @@ function derBase64ToPem(base64: string, label: 'CERTIFICATE'): string {
 function getNoCertificado(): string {
   const certPem = derBase64ToPem(CSD_CERT_B64, 'CERTIFICATE')
   const cert = new X509Certificate(certPem)
-
   const serialHex = cert.serialNumber.replace(/:/g, '').trim()
   const noCertificado = Buffer.from(serialHex, 'hex').toString('ascii').trim()
-
   if (!/^\d{20}$/.test(noCertificado)) {
     throw new Error(`NoCertificado inválido extraído del CSD: ${noCertificado}`)
   }
-
   return noCertificado
 }
 
@@ -49,42 +55,20 @@ function getFechaCfdi(date = new Date()): string {
     second: '2-digit',
     hour12: false,
   }).formatToParts(date)
-
   const map = Object.fromEntries(
-    parts
-      .filter((p) => p.type !== 'literal')
-      .map((p) => [p.type, p.value])
+    parts.filter((p) => p.type !== 'literal').map((p) => [p.type, p.value])
   )
-
   return `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}:${map.second}`
 }
 
-// ─── Cadena Original CFDI 4.0 ────────────────────────────────────────────────
-function buildCadenaOriginal(c: Record<string, any>): string {
-  const partes = [
-    c.Version,
-    c.Serie ?? '',
-    c.Folio,
-    c.Fecha,
-    c.SubTotal,
-    c.Descuento ?? '',
-    c.Moneda,
-    c.Total,
-    c.TipoDeComprobante,
-    c.Exportacion,
-    c.MetodoPago ?? '',
-    c.FormaPago ?? '',
-    c.LugarExpedicion,
-    c.emisorRfc,
-    c.emisorNombre,
-    c.emisorRegimen,
-    c.receptorRfc,
-    c.receptorNombre,
-    c.receptorDomicilio,
-    c.receptorRegimen,
-    c.receptorUsoCFDI,
-  ]
-  return `||${partes.join('|')}||`
+// ─── Cadena Original OFICIAL via XSLT SAT ────────────────────────────────────
+function buildCadenaOriginal(xmlString: string): string {
+  const xmlDoc = xmlParse(xmlString)
+  const processor = new XsltProcessor()
+  const result = processor.xsltProcess(xmlDoc, xsltDoc)
+  const cadena = `||${result}`
+  console.log('🔑 Cadena original (XSLT):', cadena)
+  return cadena
 }
 
 // ─── Sellar con CSD (RSA-SHA256) ──────────────────────────────────────────────
@@ -98,51 +82,13 @@ function sellarXML(cadenaOriginal: string): string {
   )
 }
 
-// ─── Construir XML CFDI 4.0 sellado ──────────────────────────────────────────
-function buildXML(factura: any): string {
-  const fecha = getFechaCfdi()
-  const noCertificado = getNoCertificado()
+// ─── Construir XML CFDI 4.0 SIN sello (para XSLT) ────────────────────────────
+function buildXMLSinSello(factura: any, fecha: string, noCertificado: string): string {
   const lugarExpedicion = factura.lugarExpedicion ?? '62964'
-
-  // Emisor — viene del .env
   const emisorRfc = CSD_RFC
   const emisorNombre = process.env.EMISOR_NOMBRE ?? 'ESCUELA KEMPER URGATE SA DE CV'
   const emisorRegimen = process.env.EMISOR_REGIMEN ?? '601'
-
-  // Receptor
   const receptor = factura.client
-
-  const cadenaData = {
-    Version: '4.0',
-    Serie: factura.serie ?? 'A',
-    Folio: String(factura.folio),
-    Fecha: fecha,
-    SubTotal: Number(factura.subtotal).toFixed(2),
-    Descuento: factura.descuento ? Number(factura.descuento).toFixed(2) : '',
-    Moneda: factura.moneda ?? 'MXN',
-    Total: Number(factura.total).toFixed(2),
-    TipoDeComprobante: factura.tipoComprobante ?? 'I',
-    Exportacion: '01',
-    MetodoPago: factura.metodoPago,
-    FormaPago: factura.formaPago,
-    LugarExpedicion: lugarExpedicion,
-    emisorRfc,
-    emisorNombre,
-    emisorRegimen,
-    receptorRfc: receptor.rfc,
-    receptorNombre: receptor.nombreRazonSocial,
-    receptorDomicilio: receptor.cp,
-    receptorRegimen: receptor.regimenFiscal,
-    receptorUsoCFDI: factura.usoCFDI,
-  }
-
-  const cadenaOriginal = buildCadenaOriginal(cadenaData)
-  console.log('🔑 Cadena original:', cadenaOriginal)
-  console.log('🔐 NoCertificado real:', noCertificado)
-  console.log('🕒 Fecha CFDI:', fecha)
-
-  const sello = sellarXML(cadenaOriginal)
-  console.log('✅ Sello generado:', sello.slice(0, 40) + '...')
 
   const conceptos = factura.conceptos.map((c: any) => {
     const concepto: any = {
@@ -155,12 +101,10 @@ function buildXML(factura: any): string {
       '@_Importe': Number(c.importe).toFixed(6),
       '@_ObjetoImp': c.objetoImpuesto ?? '02',
     }
-
     const base = Number(c.importe)
     const ivaTasa = Number(c.ivaTasa)
     const iepsTasa = Number(c.iepsTasa)
     const traslados: any[] = []
-
     if (ivaTasa > 0) {
       traslados.push({
         '@_Base': base.toFixed(6),
@@ -170,7 +114,6 @@ function buildXML(factura: any): string {
         '@_Importe': (base * ivaTasa).toFixed(6),
       })
     }
-
     if (iepsTasa > 0) {
       traslados.push({
         '@_Base': base.toFixed(6),
@@ -180,13 +123,11 @@ function buildXML(factura: any): string {
         '@_Importe': (base * iepsTasa).toFixed(6),
       })
     }
-
     if (traslados.length > 0) {
       concepto['cfdi:Impuestos'] = {
         'cfdi:Traslados': { 'cfdi:Traslado': traslados },
       }
     }
-
     return concepto
   })
 
@@ -194,31 +135,15 @@ function buildXML(factura: any): string {
     .flatMap((c: any) => {
       const base = Number(c.importe)
       const result: any[] = []
-
-      if (Number(c.ivaTasa) > 0) {
-        result.push({
-          impuesto: '002',
-          tasa: Number(c.ivaTasa),
-          base,
-          importe: base * Number(c.ivaTasa),
-        })
-      }
-
-      if (Number(c.iepsTasa) > 0) {
-        result.push({
-          impuesto: '003',
-          tasa: Number(c.iepsTasa),
-          base,
-          importe: base * Number(c.iepsTasa),
-        })
-      }
-
+      if (Number(c.ivaTasa) > 0)
+        result.push({ impuesto: '002', tasa: Number(c.ivaTasa), base, importe: base * Number(c.ivaTasa) })
+      if (Number(c.iepsTasa) > 0)
+        result.push({ impuesto: '003', tasa: Number(c.iepsTasa), base, importe: base * Number(c.iepsTasa) })
       return result
     })
     .reduce((acc: any[], t: any) => {
       const key = `${t.impuesto}-${t.tasa}`
       const ex = acc.find((x: any) => x._key === key)
-
       if (ex) {
         ex['@_Importe'] = (parseFloat(ex['@_Importe']) + t.importe).toFixed(6)
         ex['@_Base'] = (parseFloat(ex['@_Base']) + t.base).toFixed(6)
@@ -232,14 +157,12 @@ function buildXML(factura: any): string {
           '@_Importe': t.importe.toFixed(6),
         })
       }
-
       return acc
     }, [])
     .map(({ _key, ...rest }: any) => rest)
 
   const totalImpuestos = trasladosAgrupados.reduce(
-    (s: number, t: any) => s + parseFloat(t['@_Importe']),
-    0
+    (s: number, t: any) => s + parseFloat(t['@_Importe']), 0
   )
 
   const xmlObj = {
@@ -247,13 +170,12 @@ function buildXML(factura: any): string {
     'cfdi:Comprobante': {
       '@_xmlns:cfdi': 'http://www.sat.gob.mx/cfd/4',
       '@_xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
-      '@_xsi:schemaLocation':
-        'http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd',
+      '@_xsi:schemaLocation': 'http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd',
       '@_Version': '4.0',
       '@_Serie': factura.serie ?? 'A',
       '@_Folio': String(factura.folio),
       '@_Fecha': fecha,
-      '@_Sello': sello,
+      '@_Sello': '',           // vacío — se llenará después
       '@_NoCertificado': noCertificado,
       '@_Certificado': CSD_CERT_B64,
       '@_SubTotal': Number(factura.subtotal).toFixed(2),
@@ -293,6 +215,29 @@ function buildXML(factura: any): string {
   })
 
   return builder.build(xmlObj)
+}
+
+// ─── Construir XML final con sello insertado ──────────────────────────────────
+function buildXML(factura: any): string {
+  const fecha = getFechaCfdi()
+  const noCertificado = getNoCertificado()
+
+  console.log('🔐 NoCertificado real:', noCertificado)
+  console.log('🕒 Fecha CFDI:', fecha)
+
+  // 1. XML sin sello
+  const xmlSinSello = buildXMLSinSello(factura, fecha, noCertificado)
+  console.log('📄 XML sin sello:\n', xmlSinSello)
+
+  // 2. Cadena original via XSLT oficial SAT
+  const cadenaOriginal = buildCadenaOriginal(xmlSinSello)
+
+  // 3. Sello RSA-SHA256
+  const sello = sellarXML(cadenaOriginal)
+  console.log('✅ Sello generado:', sello.slice(0, 40) + '...')
+
+  // 4. Insertar sello en el XML
+  return xmlSinSello.replace('Sello=""', `Sello="${sello}"`)
 }
 
 // ─── Llamar a FINKOK stamp ────────────────────────────────────────────────────
@@ -337,7 +282,6 @@ async function llamarStamp(xmlBase64: string) {
       if (!uuid) {
         return { error: `[${codigo ?? 'ERROR'}] ${mensaje ?? 'Error desconocido'}`, codEstatus }
       }
-
       return { uuid, xmlTimbrado: xmlResult, codEstatus }
     } catch (err: any) {
       lastError = err
@@ -361,21 +305,14 @@ export async function POST(
 
     const factura = await prisma.factura.findUnique({
       where: { id: facturaId },
-      include: {
-        client: true,
-        conceptos: true,
-      },
+      include: { client: true, conceptos: true },
     })
 
     if (!factura) {
       return NextResponse.json({ error: 'Factura no encontrada' }, { status: 404 })
     }
-
     if (factura.uuid) {
-      return NextResponse.json(
-        { error: 'Factura ya timbrada', uuid: factura.uuid },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Factura ya timbrada', uuid: factura.uuid }, { status: 400 })
     }
 
     const xml = buildXML(factura)
@@ -385,10 +322,7 @@ export async function POST(
     const resultado = await llamarStamp(xmlBase64)
 
     if (resultado.error) {
-      return NextResponse.json(
-        { error: resultado.error, codEstatus: resultado.codEstatus },
-        { status: 422 }
-      )
+      return NextResponse.json({ error: resultado.error, codEstatus: resultado.codEstatus }, { status: 422 })
     }
 
     const actualizada = await prisma.factura.update({
@@ -408,9 +342,6 @@ export async function POST(
     })
   } catch (err: any) {
     console.error('❌ Error timbrado:', err)
-    return NextResponse.json(
-      { error: err.message ?? 'Error interno' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: err.message ?? 'Error interno' }, { status: 500 })
   }
 }
