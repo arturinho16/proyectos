@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { XMLBuilder } from 'fast-xml-parser'
 import { createSign, X509Certificate } from 'crypto'
-import { readFileSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
 // @ts-ignore — xslt-processor no tiene tipos oficiales
 import { Xslt, XmlParser } from 'xslt-processor'
@@ -322,6 +322,14 @@ export async function POST(
     // ✅ FIX: ahora buildXML es async
     const xml = await buildXML(factura)
     console.log('📄 XML sellado:\n', xml)
+
+    const xmlDir = join(process.cwd(), 'facturasyxml');
+    if (!existsSync(xmlDir)) {
+      mkdirSync(xmlDir, { recursive: true });
+    }
+    const debugPath = join(xmlDir, `factura-${factura.folio}.xml`);
+    writeFileSync(debugPath, xml, 'utf8');
+    console.log('💾 XML guardado en:', debugPath);
 
     const xmlBase64 = Buffer.from(xml, 'utf-8').toString('base64')
     const resultado = await llamarStamp(xmlBase64)
