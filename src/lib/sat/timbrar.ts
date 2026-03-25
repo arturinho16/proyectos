@@ -57,7 +57,7 @@ export function generarXML(
   noCertificado: string,
   certificadoB64: string
 ): string {
-  const fechaStr = datos.fecha.toISOString().slice(0, 19); // 2026-03-19T18:00:00
+  const fechaStr = formatFechaCfdi(datos.fecha)
   const RFC_EMISOR = process.env.CSD_RFC!;
   const REGIMEN_EMISOR = '601'; // Ajusta según tu empresa
   const NOMBRE_EMISOR = 'EMPRESA DEMO SA DE CV'; // Ajusta según tu empresa
@@ -182,6 +182,26 @@ export function generarXML(
   }
 
   return root.end({ prettyPrint: false });
+}
+
+//Funcion para la fecha 
+function formatFechaCfdi(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Mexico_City',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date)
+
+  const map = Object.fromEntries(
+    parts.filter((p) => p.type !== 'literal').map((p) => [p.type, p.value])
+  )
+
+  return `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}:${map.second}`
 }
 
 // ─── Genera la cadena original del CFDI 4.0 ──────────────────────────────────
