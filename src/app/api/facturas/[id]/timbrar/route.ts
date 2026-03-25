@@ -5,7 +5,7 @@ import { createSign, X509Certificate } from 'crypto'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 // @ts-ignore — xslt-processor no tiene tipos oficiales
-import { XsltProcessor, xmlParse } from 'xslt-processor'
+import { Xslt, XmlParser } from 'xslt-processor'
 
 // ─── Config FINKOK ────────────────────────────────────────────────────────────
 const FINKOK_ENDPOINT =
@@ -22,9 +22,9 @@ const CSD_PASS = process.env.CSD_PASSWORD!
 const CSD_RFC = process.env.CSD_RFC!
 
 // ─── Cargar XSLT SAT una sola vez (módulo-level cache) ───────────────────────
-const XSLT_PATH = join(process.cwd(), 'src/lib/sat/cadena-original.xslt')
-const xsltString = readFileSync(XSLT_PATH, 'utf-8')
-const xsltDoc = xmlParse(xsltString)
+const parser = new XmlParser()
+const xsltContent = readFileSync(join(process.cwd(), 'src/lib/sat/cadena-original.xslt'), 'utf-8')
+const xsltDoc = parser.xmlParse(xsltContent)
 
 // ─── Helpers CSD / Fecha ─────────────────────────────────────────────────────
 function derBase64ToPem(base64: string, label: 'CERTIFICATE'): string {
@@ -63,9 +63,10 @@ function getFechaCfdi(date = new Date()): string {
 
 // ─── Cadena Original OFICIAL via XSLT SAT ────────────────────────────────────
 function buildCadenaOriginal(xmlString: string): string {
-  const xmlDoc = xmlParse(xmlString)
-  const processor = new XsltProcessor()
-  const result = processor.xsltProcess(xmlDoc, xsltDoc)
+  const parser = new XmlParser()
+  const xmlDoc = parser.xmlParse(xmlString)
+  const xslt = new Xslt()
+  const result = xslt.xsltProcess(xmlDoc, xsltDoc)
   const cadena = `||${result}`
   console.log('🔑 Cadena original (XSLT):', cadena)
   return cadena
