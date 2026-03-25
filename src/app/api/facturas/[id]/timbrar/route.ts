@@ -62,12 +62,18 @@ function getFechaCfdi(date = new Date()): string {
 }
 
 // ─── Cadena Original OFICIAL via XSLT SAT ────────────────────────────────────
-function buildCadenaOriginal(xmlString: string): string {
-  const parser = new XmlParser()
-  const xmlDoc = parser.xmlParse(xmlString)
+// ✅ FIX: ahora es async y hace await del xsltProcess
+async function buildCadenaOriginal(xmlString: string): Promise<string> {
+  const parserLocal = new XmlParser()
+  const xmlDoc = parserLocal.xmlParse(xmlString)
   const xslt = new Xslt()
-  const result = xslt.xsltProcess(xmlDoc, xsltDoc)
-  const cadena = `||${result}`
+
+  const result = await xslt.xsltProcess(xmlDoc, xsltDoc)
+
+  // ✅ CFDI cadena original debe ir encerrada con || ... ||
+  const inner = String(result ?? '').trim()
+  const cadena = `||${inner}||`
+
   console.log('🔑 Cadena original (XSLT):', cadena)
   return cadena
 }
@@ -176,7 +182,7 @@ function buildXMLSinSello(factura: any, fecha: string, noCertificado: string): s
       '@_Serie': factura.serie ?? 'A',
       '@_Folio': String(factura.folio),
       '@_Fecha': fecha,
-      '@_Sello': '',           // vacío — se llenará después
+      '@_Sello': '',
       '@_NoCertificado': noCertificado,
       '@_Certificado': CSD_CERT_B64,
       '@_SubTotal': Number(factura.subtotal).toFixed(2),
@@ -219,25 +225,22 @@ function buildXMLSinSello(factura: any, fecha: string, noCertificado: string): s
 }
 
 // ─── Construir XML final con sello insertado ──────────────────────────────────
-function buildXML(factura: any): string {
+// ✅ FIX: ahora es async porque depende de buildCadenaOriginal async
+async function buildXML(factura: any): Promise<string> {
   const fecha = getFechaCfdi()
   const noCertificado = getNoCertificado()
 
   console.log('🔐 NoCertificado real:', noCertificado)
   console.log('🕒 Fecha CFDI:', fecha)
 
-  // 1. XML sin sello
   const xmlSinSello = buildXMLSinSello(factura, fecha, noCertificado)
   console.log('📄 XML sin sello:\n', xmlSinSello)
 
-  // 2. Cadena original via XSLT oficial SAT
-  const cadenaOriginal = buildCadenaOriginal(xmlSinSello)
+  const cadenaOriginal = await buildCadenaOriginal(xmlSinSello)
 
-  // 3. Sello RSA-SHA256
   const sello = sellarXML(cadenaOriginal)
   console.log('✅ Sello generado:', sello.slice(0, 40) + '...')
 
-  // 4. Insertar sello en el XML
   return xmlSinSello.replace('Sello=""', `Sello="${sello}"`)
 }
 
@@ -316,7 +319,8 @@ export async function POST(
       return NextResponse.json({ error: 'Factura ya timbrada', uuid: factura.uuid }, { status: 400 })
     }
 
-    const xml = buildXML(factura)
+    // ✅ FIX: ahora buildXML es async
+    const xml = await buildXML(factura)
     console.log('📄 XML sellado:\n', xml)
 
     const xmlBase64 = Buffer.from(xml, 'utf-8').toString('base64')
