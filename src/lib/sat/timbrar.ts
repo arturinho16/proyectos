@@ -61,24 +61,40 @@ export function generarXMLUnsigned(datos: DatosFactura, noCertificado: string, c
       ...(datos.condicionesPago && { CondicionesDePago: datos.condicionesPago }),
     });
 
-  root.ele('cfdi:Emisor', { Rfc: RFC_EMISOR, Nombre: NOMBRE_EMISOR, RegimenFiscal: REGIMEN_EMISOR }).up();
+  // Emisor con .trim() preventivo
+  root.ele('cfdi:Emisor', {
+    Rfc: RFC_EMISOR.trim(),
+    Nombre: NOMBRE_EMISOR.trim(),
+    RegimenFiscal: REGIMEN_EMISOR.trim()
+  }).up();
 
+  // Receptor con .trim() preventivo en todos sus datos
   root.ele('cfdi:Receptor', {
-    Rfc: datos.client.rfc, Nombre: datos.client.nombreRazonSocial.trim(),
-    DomicilioFiscalReceptor: datos.client.cp, RegimenFiscalReceptor: datos.client.regimenFiscal, UsoCFDI: datos.usoCFDI,
+    Rfc: datos.client.rfc.trim(),
+    Nombre: datos.client.nombreRazonSocial.trim(),
+    DomicilioFiscalReceptor: datos.client.cp.trim(),
+    RegimenFiscalReceptor: datos.client.regimenFiscal.trim(),
+    UsoCFDI: datos.usoCFDI.trim(),
   }).up();
 
   const conceptosNode = root.ele('cfdi:Conceptos');
   for (const c of datos.conceptos) {
     const baseParaImpuestos = (c.importe - c.descuento).toFixed(2); // Base obligatoria
+
+    // Conceptos con .trim() en todas las descripciones y claves del SAT
     const concepto = conceptosNode.ele('cfdi:Concepto', {
-      ClaveProdServ: c.claveProdServ, Cantidad: Number(c.cantidad).toString(),
-      ClaveUnidad: c.claveUnidad, Unidad: c.unidad, Descripcion: c.descripcion,
-      ValorUnitario: Number(c.precioUnitario).toFixed(6), Importe: Number(c.importe).toFixed(2),
-      ...(c.descuento > 0 && { Descuento: Number(c.descuento).toFixed(2) }), ObjetoImp: c.objetoImpuesto,
+      ClaveProdServ: c.claveProdServ.trim(),
+      Cantidad: Number(c.cantidad).toString(),
+      ClaveUnidad: c.claveUnidad.trim(),
+      Unidad: c.unidad.trim(),
+      Descripcion: c.descripcion.trim(),
+      ValorUnitario: Number(c.precioUnitario).toFixed(6),
+      Importe: Number(c.importe).toFixed(2),
+      ...(c.descuento > 0 && { Descuento: Number(c.descuento).toFixed(2) }),
+      ObjetoImp: c.objetoImpuesto.trim(),
     });
 
-    if (c.objetoImpuesto !== '01' && (c.ivaImporte > 0 || c.iepsImporte > 0)) {
+    if (c.objetoImpuesto.trim() !== '01' && (c.ivaImporte > 0 || c.iepsImporte > 0)) {
       const traslados = concepto.ele('cfdi:Impuestos').ele('cfdi:Traslados');
       if (c.ivaImporte > 0) {
         traslados.ele('cfdi:Traslado', {
@@ -181,10 +197,12 @@ export async function timbrarFactura(datos: DatosFactura): Promise<{ uuid: strin
   const stampResult = result?.stampResult;
 
   if (!stampResult) throw new Error('FINKOK no devolvió respuesta');
-  if (stampResult.CodEstatus !== '300') {
+
+  // ¡El validador infalible: Si hay UUID, se timbró con éxito!
+  if (!stampResult.UUID) {
     const incidencias = stampResult.Incidencias?.Incidencia;
     const incidencia = Array.isArray(incidencias) ? incidencias[0] : incidencias;
-    throw new Error(`Error FINKOK: ${incidencia?.MensajeIncidencia || stampResult.CodEstatus}`);
+    throw new Error(`Error FINKOK: ${incidencia?.MensajeIncidencia || stampResult.CodEstatus || 'Error desconocido'}`);
   }
 
   return {
