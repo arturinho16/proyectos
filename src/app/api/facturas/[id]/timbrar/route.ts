@@ -43,16 +43,100 @@ function fmt6(n: unknown): string {
   return fixed === '-0.000000' ? '0.000000' : fixed
 }
 
-async function buildCadenaOriginal(xml: string): Promise<string> {
-  const xslt = new Xslt()
-  const parser = new XmlParser()
+function buildCadenaOriginal(xml: string): string {
+  const { XMLParser } = require('fast-xml-parser')
 
-  const xmlDoc = parser.xmlParse(xml)
-  const xsltDoc = parser.xmlParse(xsltContent)
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: '@_',
+  })
 
-  const result = await xslt.xsltProcess(xmlDoc, xsltDoc)
+  const json = parser.parse(xml)
+  const c = json['cfdi:Comprobante']
 
-  return result.toString().trim()
+  const get = (v: any) => (v ?? '').toString().trim()
+
+  let cadena = '|'
+
+  // ✅ ORDEN EXACTO SAT
+  cadena += get(c['@_Version']) + '|'
+  cadena += get(c['@_Serie']) + '|'
+  cadena += get(c['@_Folio']) + '|'
+  cadena += get(c['@_Fecha']) + '|'
+  cadena += get(c['@_FormaPago']) + '|'
+  cadena += get(c['@_NoCertificado']) + '|'
+  cadena += get(c['@_CondicionesDePago']) + '|'
+  cadena += get(c['@_SubTotal']) + '|'
+  cadena += get(c['@_Descuento']) + '|'
+  cadena += get(c['@_Moneda']) + '|'
+  cadena += get(c['@_TipoCambio']) + '|'
+  cadena += get(c['@_Total']) + '|'
+  cadena += get(c['@_TipoDeComprobante']) + '|'
+  cadena += get(c['@_Exportacion']) + '|'
+  cadena += get(c['@_MetodoPago']) + '|'
+  cadena += get(c['@_LugarExpedicion']) + '|'
+
+  // ✅ EMISOR
+  const e = c['cfdi:Emisor']
+  cadena += get(e['@_Rfc']) + '|'
+  cadena += get(e['@_Nombre']) + '|'
+  cadena += get(e['@_RegimenFiscal']) + '|'
+
+  // ✅ RECEPTOR
+  const r = c['cfdi:Receptor']
+  cadena += get(r['@_Rfc']) + '|'
+  cadena += get(r['@_Nombre']) + '|'
+  cadena += get(r['@_DomicilioFiscalReceptor']) + '|'
+  cadena += get(r['@_RegimenFiscalReceptor']) + '|'
+  cadena += get(r['@_UsoCFDI']) + '|'
+
+  // ✅ CONCEPTOS
+  const conceptos = c['cfdi:Conceptos']['cfdi:Concepto']
+  const lista = Array.isArray(conceptos) ? conceptos : [conceptos]
+
+  for (const item of lista) {
+    cadena += get(item['@_ClaveProdServ']) + '|'
+    cadena += get(item['@_Cantidad']) + '|'
+    cadena += get(item['@_ClaveUnidad']) + '|'
+    cadena += get(item['@_Unidad']) + '|'
+    cadena += get(item['@_Descripcion']) + '|'
+    cadena += get(item['@_ValorUnitario']) + '|'
+    cadena += get(item['@_Importe']) + '|'
+    cadena += get(item['@_Descuento']) + '|'
+    cadena += get(item['@_ObjetoImp']) + '|'
+
+    const tras = item['cfdi:Impuestos']?.['cfdi:Traslados']?.['cfdi:Traslado']
+    const traslados = Array.isArray(tras) ? tras : tras ? [tras] : []
+
+    for (const t of traslados) {
+      cadena += get(t['@_Base']) + '|'
+      cadena += get(t['@_Impuesto']) + '|'
+      cadena += get(t['@_TipoFactor']) + '|'
+      cadena += get(t['@_TasaOCuota']) + '|'
+      cadena += get(t['@_Importe']) + '|'
+    }
+  }
+
+  // ✅ IMPUESTOS GLOBALES
+  const imp = c['cfdi:Impuestos']
+  if (imp) {
+    const tras = imp['cfdi:Traslados']?.['cfdi:Traslado']
+    const arr = Array.isArray(tras) ? tras : tras ? [tras] : []
+
+    for (const t of arr) {
+      cadena += get(t['@_Base']) + '|'
+      cadena += get(t['@_Impuesto']) + '|'
+      cadena += get(t['@_TipoFactor']) + '|'
+      cadena += get(t['@_TasaOCuota']) + '|'
+      cadena += get(t['@_Importe']) + '|'
+    }
+  }
+
+  cadena += '||'
+
+  console.log('🔑 Cadena original (REAL):', cadena)
+
+  return cadena
 }
 
 function getNoCertificadoFromB64(certB64: string): string {
