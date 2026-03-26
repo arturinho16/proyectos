@@ -1,143 +1,95 @@
 import * as soap from 'soap';
 import { create } from 'xmlbuilder2';
-import { cerToPem, keyToPem, getNoCertificado, getCertificadoBase64, generarSello } from './firmar';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+// @ts-ignore
+import { Xslt, XmlParser } from 'xslt-processor';
+import { keyToPem, getNoCertificado, getCertificadoBase64, generarSello } from './firmar';
 
 const WSDL_DEMO = 'https://demo-facturacion.finkok.com/servicios/soap/stamp.wsdl';
 const WSDL_PROD = 'https://facturacion.finkok.com/servicios/soap/stamp.wsdl';
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
-interface Concepto {
-  claveProdServ: string;
-  claveUnidad: string;
-  unidad: string;
-  descripcion: string;
-  cantidad: number;
-  precioUnitario: number;
-  descuento: number;
-  importe: number;
-  objetoImpuesto: string;
-  ivaTasa: number;
-  iepsTasa: number;
-  ivaImporte: number;
-  iepsImporte: number;
+// Carga del XSLT oficial una sola vez en memoria
+const xsltPath = join(process.cwd(), 'src/lib/sat/cadena-original.xslt');
+const xsltContent = readFileSync(xsltPath, 'utf8');
+
+// (Tus interfaces se mantienen iguales)
+export interface Concepto {
+  claveProdServ: string; claveUnidad: string; unidad: string; descripcion: string;
+  cantidad: number; precioUnitario: number; descuento: number; importe: number;
+  objetoImpuesto: string; ivaTasa: number; iepsTasa: number; ivaImporte: number; iepsImporte: number;
+}
+export interface DatosFactura {
+  serie: string; folio: string; fecha: Date; lugarExpedicion: string;
+  formaPago: string; metodoPago: string; moneda: string; tipoCambio: number;
+  condicionesPago?: string | null; tipoComprobante: string; subtotal: number;
+  descuento: number; totalIVA: number; totalIEPS: number; retencionIVA: number;
+  retencionISR: number; total: number; usoCFDI: string; conceptos: Concepto[];
+  client: { rfc: string; nombreRazonSocial: string; regimenFiscal: string; cp: string; };
 }
 
-interface DatosFactura {
-  serie: string;
-  folio: string;
-  fecha: Date;
-  lugarExpedicion: string;
-  formaPago: string;
-  metodoPago: string;
-  moneda: string;
-  tipoCambio: number;
-  condicionesPago?: string | null;
-  tipoComprobante: string;
-  subtotal: number;
-  descuento: number;
-  totalIVA: number;
-  totalIEPS: number;
-  retencionIVA: number;
-  retencionISR: number;
-  total: number;
-  usoCFDI: string;
-  conceptos: Concepto[];
-  client: {
-    rfc: string;
-    nombreRazonSocial: string;
-    regimenFiscal: string;
-    cp: string;
-    usoCfdiDefault: string;
-  };
+function formatFechaCfdi(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(date);
+  const map = Object.fromEntries(parts.filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]));
+  return `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}:${map.second}`;
 }
 
-// ─── Genera el XML CFDI 4.0 sin sellar ───────────────────────────────────────
-export function generarXML(
-  datos: DatosFactura,
-  noCertificado: string,
-  certificadoB64: string
-): string {
-  const fechaStr = formatFechaCfdi(datos.fecha)
-  const RFC_EMISOR = process.env.CSD_RFC!;
-  const REGIMEN_EMISOR = '601'; // Ajusta según tu empresa
-  const NOMBRE_EMISOR = 'EMPRESA DEMO SA DE CV'; // Ajusta según tu empresa
+// 1. Genera el XML CFDI 4.0 sin sellar
+export function generarXMLUnsigned(datos: DatosFactura, noCertificado: string, certificadoB64: string): string {
+  const fechaStr = formatFechaCfdi(datos.fecha);
+  const RFC_EMISOR = process.env.EMISOR_RFC || 'XAXX010101000';
+  const REGIMEN_EMISOR = process.env.EMISOR_REGIMEN_FISCAL || '601';
+  const NOMBRE_EMISOR = process.env.EMISOR_NOMBRE || 'EMPRESA DEMO';
 
   const root = create({ version: '1.0', encoding: 'UTF-8' })
     .ele('cfdi:Comprobante', {
       'xmlns:cfdi': 'http://www.sat.gob.mx/cfd/4',
       'xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
-      'xsi:schemaLocation':
-        'http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd',
-      Version: '4.0',
-      Serie: datos.serie,
-      Folio: datos.folio,
-      Fecha: fechaStr,
-      FormaPago: datos.formaPago,
-      NoCertificado: noCertificado,
-      Certificado: certificadoB64,
+      'xsi:schemaLocation': 'http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd',
+      Version: '4.0', Serie: datos.serie, Folio: datos.folio, Fecha: fechaStr,
+      Sello: '', // Va vacío al inicio
+      FormaPago: datos.formaPago, NoCertificado: noCertificado, Certificado: certificadoB64,
       SubTotal: datos.subtotal.toFixed(2),
       ...(datos.descuento > 0 && { Descuento: datos.descuento.toFixed(2) }),
       Moneda: datos.moneda,
       ...(datos.moneda !== 'MXN' && { TipoCambio: datos.tipoCambio.toFixed(6) }),
-      Total: datos.total.toFixed(2),
-      TipoDeComprobante: datos.tipoComprobante,
-      Exportacion: '01',
-      MetodoPago: datos.metodoPago,
-      LugarExpedicion: datos.lugarExpedicion,
+      Total: datos.total.toFixed(2), TipoDeComprobante: datos.tipoComprobante, Exportacion: '01',
+      MetodoPago: datos.metodoPago, LugarExpedicion: datos.lugarExpedicion,
       ...(datos.condicionesPago && { CondicionesDePago: datos.condicionesPago }),
-      Sello: '', // Se llenará después
     });
 
-  // Emisor
-  root.ele('cfdi:Emisor', {
-    Rfc: RFC_EMISOR,
-    Nombre: NOMBRE_EMISOR,
-    RegimenFiscal: REGIMEN_EMISOR,
-  }).up();
+  root.ele('cfdi:Emisor', { Rfc: RFC_EMISOR, Nombre: NOMBRE_EMISOR, RegimenFiscal: REGIMEN_EMISOR }).up();
 
-  // Receptor
   root.ele('cfdi:Receptor', {
-    Rfc: datos.client.rfc,
-    Nombre: datos.client.nombreRazonSocial,
-    DomicilioFiscalReceptor: datos.client.cp,
-    RegimenFiscalReceptor: datos.client.regimenFiscal,
-    UsoCFDI: datos.usoCFDI,
+    Rfc: datos.client.rfc, Nombre: datos.client.nombreRazonSocial.trim(),
+    DomicilioFiscalReceptor: datos.client.cp, RegimenFiscalReceptor: datos.client.regimenFiscal, UsoCFDI: datos.usoCFDI,
   }).up();
 
-  // Conceptos
   const conceptosNode = root.ele('cfdi:Conceptos');
   for (const c of datos.conceptos) {
+    const baseParaImpuestos = (c.importe - c.descuento).toFixed(2); // Base obligatoria
     const concepto = conceptosNode.ele('cfdi:Concepto', {
-      ClaveProdServ: c.claveProdServ,
-      Cantidad: Number(c.cantidad).toString(),
-      ClaveUnidad: c.claveUnidad,
-      Unidad: c.unidad,
-      Descripcion: c.descripcion,
-      ValorUnitario: Number(c.precioUnitario).toFixed(6),
-      Importe: Number(c.importe).toFixed(2),
-      ...(c.descuento > 0 && { Descuento: Number(c.descuento).toFixed(2) }),
-      ObjetoImp: c.objetoImpuesto,
+      ClaveProdServ: c.claveProdServ, Cantidad: Number(c.cantidad).toString(),
+      ClaveUnidad: c.claveUnidad, Unidad: c.unidad, Descripcion: c.descripcion,
+      ValorUnitario: Number(c.precioUnitario).toFixed(6), Importe: Number(c.importe).toFixed(2),
+      ...(c.descuento > 0 && { Descuento: Number(c.descuento).toFixed(2) }), ObjetoImp: c.objetoImpuesto,
     });
 
     if (c.objetoImpuesto !== '01' && (c.ivaImporte > 0 || c.iepsImporte > 0)) {
-      const impuestos = concepto.ele('cfdi:Impuestos');
-      const traslados = impuestos.ele('cfdi:Traslados');
+      const traslados = concepto.ele('cfdi:Impuestos').ele('cfdi:Traslados');
       if (c.ivaImporte > 0) {
         traslados.ele('cfdi:Traslado', {
-          Base: Number(c.importe).toFixed(2),
-          Impuesto: '002',
-          TipoFactor: 'Tasa',
-          TasaOCuota: Number(c.ivaTasa).toFixed(6),
-          Importe: Number(c.ivaImporte).toFixed(2),
+          Base: baseParaImpuestos, Impuesto: '002', TipoFactor: 'Tasa',
+          TasaOCuota: Number(c.ivaTasa).toFixed(6), Importe: Number(c.ivaImporte).toFixed(2),
         }).up();
       }
       if (c.iepsImporte > 0) {
         traslados.ele('cfdi:Traslado', {
-          Base: Number(c.importe).toFixed(2),
-          Impuesto: '003',
-          TipoFactor: 'Tasa',
-          TasaOCuota: Number(c.iepsTasa).toFixed(6),
-          Importe: Number(c.iepsImporte).toFixed(2),
+          Base: baseParaImpuestos, Impuesto: '003', TipoFactor: 'Tasa',
+          TasaOCuota: Number(c.iepsTasa).toFixed(6), Importe: Number(c.iepsImporte).toFixed(2),
         }).up();
       }
     }
@@ -152,147 +104,92 @@ export function generarXML(
     impuestosAttr.TotalImpuestosRetenidos = (datos.retencionIVA + datos.retencionISR).toFixed(2);
   }
 
-  const impuestosNode = root.ele('cfdi:Impuestos', impuestosAttr);
-  if (datos.totalIVA > 0 || datos.totalIEPS > 0) {
-    const trasladosNode = impuestosNode.ele('cfdi:Traslados');
-    if (datos.totalIVA > 0) {
-      trasladosNode.ele('cfdi:Traslado', {
-        Base: datos.subtotal.toFixed(2),
-        Impuesto: '002',
-        TipoFactor: 'Tasa',
-        TasaOCuota: '0.160000',
-        Importe: datos.totalIVA.toFixed(2),
-      }).up();
-    }
-  }
-  if (datos.retencionIVA > 0 || datos.retencionISR > 0) {
-    const retencionesNode = impuestosNode.ele('cfdi:Retenciones');
-    if (datos.retencionIVA > 0) {
-      retencionesNode.ele('cfdi:Retencion', {
-        Impuesto: '002',
-        Importe: datos.retencionIVA.toFixed(2),
-      }).up();
-    }
-    if (datos.retencionISR > 0) {
-      retencionesNode.ele('cfdi:Retencion', {
-        Impuesto: '001',
-        Importe: datos.retencionISR.toFixed(2),
-      }).up();
+  const baseGlobal = (datos.subtotal - datos.descuento).toFixed(2);
+  if (Object.keys(impuestosAttr).length > 0) {
+    const impuestosNode = root.ele('cfdi:Impuestos', impuestosAttr);
+    if (datos.totalIVA > 0 || datos.totalIEPS > 0) {
+      const trasladosNode = impuestosNode.ele('cfdi:Traslados');
+      if (datos.totalIVA > 0) {
+        trasladosNode.ele('cfdi:Traslado', {
+          Base: baseGlobal, Impuesto: '002', TipoFactor: 'Tasa',
+          TasaOCuota: '0.160000', Importe: datos.totalIVA.toFixed(2),
+        }).up();
+      }
     }
   }
 
-  return root.end({ prettyPrint: false });
+  return root.end({ prettyPrint: false }); // false garantiza integridad de datos
 }
 
-//Funcion para la fecha 
-function formatFechaCfdi(date: Date): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Mexico_City',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).formatToParts(date)
+// 2. Extrae Cadena Original vía XSLT (Con Sanitizador estricto SAT)
+export async function buildCadenaOriginal(xmlString: string): Promise<string> {
+  const xslt = new Xslt();
+  const parser = new XmlParser();
+  const xmlDoc = parser.xmlParse(xmlString);
+  const xsltDoc = parser.xmlParse(xsltContent);
+  const result = await xslt.xsltProcess(xmlDoc, xsltDoc);
 
-  const map = Object.fromEntries(
-    parts.filter((p) => p.type !== 'literal').map((p) => [p.type, p.value])
-  )
+  let cadena = result.toString();
 
-  return `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}:${map.second}`
+  // 1. Limpiar todos los saltos de línea, retornos de carro y tabulaciones
+  cadena = cadena.replace(/[\r\n\t]/g, '');
+
+  // 2. Quitar espacios en blanco a los extremos
+  cadena = cadena.trim();
+
+  // 3. Asegurar que inicie exactamente con "||" (sin importar cómo venga)
+  if (!cadena.startsWith('||')) {
+    cadena = '||' + cadena.replace(/^\|+/, '');
+  }
+
+  // 4. Asegurar que termine exactamente con "||" (limpiando "|||" o "|")
+  cadena = cadena.replace(/\|+$/, '') + '||';
+
+  return cadena;
 }
 
-// ─── Genera la cadena original del CFDI 4.0 ──────────────────────────────────
-function generarCadenaOriginal(xmlString: string): string {
-  // Extraemos atributos del Comprobante para la cadena original
-  // Formato SAT: ||Version|...|Sello||  (sin el Sello)
-  const getAttr = (attr: string): string => {
-    const match = xmlString.match(new RegExp(`${attr}="([^"]+)"`));
-    return match ? match[1] : '';
-  };
-
-  const campos = [
-    getAttr('Version'),
-    getAttr('Serie'),
-    getAttr('Folio'),
-    getAttr('Fecha'),
-    getAttr('FormaPago'),
-    getAttr('NoCertificado'),
-    getAttr('SubTotal'),
-    getAttr('Moneda'),
-    getAttr('Total'),
-    getAttr('TipoDeComprobante'),
-    getAttr('Exportacion'),
-    getAttr('MetodoPago'),
-    getAttr('LugarExpedicion'),
-  ].filter(Boolean);
-
-  return `||${campos.join('|')}||`;
-}
-
-// ─── Función principal: genera XML firmado y lo timbra con FINKOK ─────────────
-export async function timbrarFactura(datos: DatosFactura): Promise<{
-  uuid: string;
-  xmlTimbrado: string;
-  noCertificadoSAT: string;
-}> {
-  // 1. Leer CSD del .env
+// 3. Flujo Principal
+export async function timbrarFactura(datos: DatosFactura): Promise<{ uuid: string; xmlTimbrado: string; noCertificadoSAT: string; }> {
   const cerB64 = process.env.CSD_CERTIFICADO_B64!;
   const keyB64 = process.env.CSD_LLAVE_B64!;
   const password = process.env.CSD_PASSWORD!;
-  const usuario = process.env.FINKOK_USUARIO!;
+  const usuario = process.env.FINKOK_USUARIO || process.env.FINKOK_USER!;
   const passwordFinkok = process.env.FINKOK_PASSWORD!;
   const ambiente = process.env.FINKOK_AMBIENTE || 'demo';
 
-  // 2. Preparar certificado
+  // Preparar cert
   const noCertificado = getNoCertificado(cerB64);
   const certificadoB64 = getCertificadoBase64(cerB64);
   const keyPem = keyToPem(keyB64, password);
 
-  // 3. Generar XML sin sello
-  let xmlSinSello = generarXML(datos, noCertificado, certificadoB64);
+  // Armar el XML Unsigned
+  const xmlSinSello = generarXMLUnsigned(datos, noCertificado, certificadoB64);
 
-  // 4. Generar cadena original y sello
-  const cadenaOriginal = generarCadenaOriginal(xmlSinSello);
+  // Cadena Original XSLT y Sello
+  const cadenaOriginal = await buildCadenaOriginal(xmlSinSello);
+  console.log("🔑 Cadena Original:", cadenaOriginal); // Útil para depurar
+
   const sello = generarSello(cadenaOriginal, keyPem);
-
-  // 5. Insertar sello en el XML
   const xmlFirmado = xmlSinSello.replace('Sello=""', `Sello="${sello}"`);
 
-  // 6. Codificar en Base64 para FINKOK
-  const xmlBase64 = Buffer.from(xmlFirmado, 'utf-8').toString('base64');
-
-  // 7. Llamar al SOAP de FINKOK
+  // SOAP Finkok
   const wsdl = ambiente === 'demo' ? WSDL_DEMO : WSDL_PROD;
   const client = await soap.createClientAsync(wsdl);
+  const xmlBase64 = Buffer.from(xmlFirmado, 'utf-8').toString('base64');
 
-  const [result] = await client.stampAsync({
-    xml: xmlBase64,
-    username: usuario,
-    password: passwordFinkok,
-  });
-
+  const [result] = await client.stampAsync({ xml: xmlBase64, username: usuario, password: passwordFinkok });
   const stampResult = result?.stampResult;
-  console.log('🔍 FINKOK respuesta completa:', JSON.stringify(result, null, 2));
-  if (!stampResult) throw new Error('FINKOK no devolvió respuesta');
 
-  // CodEstatus 300 = éxito
+  if (!stampResult) throw new Error('FINKOK no devolvió respuesta');
   if (stampResult.CodEstatus !== '300') {
     const incidencias = stampResult.Incidencias?.Incidencia;
-    // Puede ser array o objeto único
     const incidencia = Array.isArray(incidencias) ? incidencias[0] : incidencias;
-    const mensaje = incidencia?.MensajeIncidencia || `Código: ${stampResult.CodEstatus}`;
-    throw new Error(`Error FINKOK: ${mensaje}`);
+    throw new Error(`Error FINKOK: ${incidencia?.MensajeIncidencia || stampResult.CodEstatus}`);
   }
-
-  const xmlTimbradoB64 = stampResult.xml;
-  const xmlTimbrado = Buffer.from(xmlTimbradoB64, 'base64').toString('utf-8');
 
   return {
     uuid: stampResult.UUID,
-    xmlTimbrado,
+    xmlTimbrado: Buffer.from(stampResult.xml, 'base64').toString('utf-8'),
     noCertificadoSAT: stampResult.NoCertificadoSAT,
   };
 }
