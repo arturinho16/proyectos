@@ -45,9 +45,14 @@ function fmt6(n: unknown): string {
 
 async function buildCadenaOriginal(xml: string): Promise<string> {
   const xslt = new Xslt()
-  const xmlParser = new XmlParser()
-  const out = await xslt.xsltProcess(xmlParser.parseXmlString(xml), xsltContent)
-  return out.toString().trim()
+  const parser = new XmlParser()
+
+  const xmlDoc = parser.xmlParse(xml)
+  const xsltDoc = parser.xmlParse(xsltContent)
+
+  const result = await xslt.xsltProcess(xmlDoc, xsltDoc)
+
+  return result.toString().trim()
 }
 
 function getNoCertificadoFromB64(certB64: string): string {
@@ -62,13 +67,14 @@ function getNoCertificadoFromB64(certB64: string): string {
 
 function signCadenaOriginal(cadena: string): string {
   const keyB64 = (process.env.CSD_LLAVE_B64 || '').replace(/\s/g, '')
+  const password = process.env.CSD_PASSWORD || ''
   if (!keyB64) throw new Error('Falta CSD_LLAVE_B64 en .env')
-
+  if (!password) throw new Error('Falta CSD_PASSWORD en .env')
   const keyDer = Buffer.from(keyB64, 'base64')
   const sign = createSign('RSA-SHA256')
   sign.update(cadena, 'utf8')
   sign.end()
-  return sign.sign({ key: keyDer, format: 'der', type: 'pkcs8' }, 'base64')
+  return sign.sign({ key: keyDer, format: 'der', type: 'pkcs8', passphrase: password }, 'base64')
 }
 
 function injectSello(xml: string, sello: string): string {
