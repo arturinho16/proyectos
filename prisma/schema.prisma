@@ -12,11 +12,12 @@ generator client {
 
 datasource db {
   provider = "postgresql"
- 
 }
 
+// ==========================================
 // 1. Tabla de Clientes 
-	model Client {
+// ==========================================
+model Client {
   id                String   @id @default(uuid())
   
   // Datos Fiscales Obligatorios (CFDI 4.0)
@@ -44,12 +45,18 @@ datasource db {
   telefono          String?
   celular           String?
   tipoPersona       String?  // Fisica o Moral
+  
+  // Relaciones
   facturas          Factura[]
+  cotizaciones      Cotizacion[]
+  
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
 
-// 2. Tabla de Productos (Basada en tu captura "Nuevo Producto")
+// ==========================================
+// 2. Tabla de Productos
+// ==========================================
 model Product {
   id               String   @id @default(uuid())
 
@@ -74,64 +81,76 @@ model Product {
   cuentaPredial    String?  // Para bienes inmuebles
   numeroPedimento  String?  // Información aduanera
   impuestoLocal    Decimal? @db.Decimal(5, 4) // Tasa de impuesto local si aplica
-  onceptosFactura  ConceptoFactura[]
+  
+  // Relaciones (Corregido el error tipográfico onceptosFactura)
+  conceptosFactura    ConceptoFactura[]
+  conceptosCotizacion ConceptoCotizacion[]
+  
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
 
+// ==========================================
 // 3. Tabla de Facturas (CFDI 4.0 - Ingreso)
+// ==========================================
 model Factura {
-  id            String   @id @default(uuid())
+  id              String   @id @default(uuid())
 
   // Identificación del comprobante
-  serie         String   @default("A")
-  folio         String
-  fecha         DateTime
+  serie           String   @default("A")
+  folio           String
+  fecha           DateTime
   lugarExpedicion String  // CP del emisor
 
   // Tipo de comprobante
   tipoComprobante String  @default("I") // I=Ingreso, E=Egreso, T=Traslado, N=Nómina, P=Pago
 
   // Pago
-  formaPago     String   // Clave SAT (01=Efectivo, 03=Transferencia, etc.)
-  metodoPago    String   // PUE o PPD
-  moneda        String   @default("MXN")
-  tipoCambio    Decimal  @default(1) @db.Decimal(10, 6)
+  formaPago       String   // Clave SAT (01=Efectivo, 03=Transferencia, etc.)
+  metodoPago      String   // PUE o PPD
+  moneda          String   @default("MXN")
+  tipoCambio      Decimal  @default(1) @db.Decimal(10, 6)
   condicionesPago String?
 
   // Receptor (relación con Client)
-  clientId      String
-  client        Client   @relation(fields: [clientId], references: [id])
-  usoCFDI       String   // Clave SAT (G01, G03, etc.)
+  clientId        String
+  client          Client   @relation(fields: [clientId], references: [id])
+  usoCFDI         String   // Clave SAT (G01, G03, etc.)
 
   // Totales
-  subtotal      Decimal  @db.Decimal(15, 2)
-  descuento     Decimal  @default(0) @db.Decimal(15, 2)
-  totalIVA      Decimal  @default(0) @db.Decimal(15, 2)
-  totalIEPS     Decimal  @default(0) @db.Decimal(15, 2)
-  retencionIVA  Decimal  @default(0) @db.Decimal(15, 2)
-  retencionISR  Decimal  @default(0) @db.Decimal(15, 2)
-  total         Decimal  @db.Decimal(15, 2)
+  subtotal        Decimal  @db.Decimal(15, 2)
+  descuento       Decimal  @default(0) @db.Decimal(15, 2)
+  totalIVA        Decimal  @default(0) @db.Decimal(15, 2)
+  totalIEPS       Decimal  @default(0) @db.Decimal(15, 2)
+  retencionIVA    Decimal  @default(0) @db.Decimal(15, 2)
+  retencionISR    Decimal  @default(0) @db.Decimal(15, 2)
+  total           Decimal  @db.Decimal(15, 2)
 
   // Estado del CFDI
-  estado        String   @default("BORRADOR") // BORRADOR, TIMBRADO, CANCELADO
-  uuid          String?  // UUID del SAT (después de timbrar)
-  xmlTimbrado   String?  // XML firmado por el PAC
-  pdfUrl        String?  // URL del PDF generado
+  estado          String   @default("BORRADOR") // BORRADOR, TIMBRADO, CANCELADO
+  uuid            String?  // UUID del SAT (después de timbrar)
+  xmlTimbrado     String?  // XML firmado por el PAC
+  pdfUrl          String?  // URL del PDF generado
 
   // Notas internas
-  notas         String?
+  notas           String?
 
   // Conceptos (relación 1:N)
-  conceptos     ConceptoFactura[]
+  conceptos       ConceptoFactura[]
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  // AQUÍ ESTÁ EL APARTADO 3 INSERTADO: Relación con la Cotización de origen
+  cotizacionId    String?
+  cotizacion      Cotizacion? @relation(fields: [cotizacionId], references: [id])
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@unique([serie, folio]) // No puede haber dos facturas con misma serie+folio
 }
 
+// ==========================================
 // 4. Conceptos de la Factura
+// ==========================================
 model ConceptoFactura {
   id              String   @id @default(uuid())
 
@@ -163,3 +182,77 @@ model ConceptoFactura {
   createdAt       DateTime @default(now())
 }
 
+// ==========================================
+// 5. Tabla de Cotizaciones
+// ==========================================
+model Cotizacion {
+  id               String   @id @default(uuid())
+  serie            String   @default("COT")
+  folio            String
+  fecha            DateTime @default(now())
+  fechaVencimiento DateTime? // Opcional: ¿hasta cuándo es válida?
+
+  // Relación con Cliente
+  clientId         String
+  client           Client   @relation(fields: [clientId], references: [id])
+
+  // Totales (Exactamente igual que la Factura)
+  subtotal         Decimal  @db.Decimal(15, 2)
+  descuento        Decimal  @default(0) @db.Decimal(15, 2)
+  totalIVA         Decimal  @default(0) @db.Decimal(15, 2)
+  totalIEPS        Decimal  @default(0) @db.Decimal(15, 2)
+  retencionIVA     Decimal  @default(0) @db.Decimal(15, 2)
+  retencionISR     Decimal  @default(0) @db.Decimal(15, 2)
+  total            Decimal  @db.Decimal(15, 2)
+
+  // Datos Comerciales
+  moneda           String   @default("MXN")
+  tipoCambio       Decimal  @default(1) @db.Decimal(10, 6)
+  condicionesPago  String?
+  notas            String?
+
+  // Control de Estado
+  // Estados posibles: BORRADOR, ENVIADA, ACEPTADA, RECHAZADA, FACTURADA
+  estado           String   @default("BORRADOR") 
+
+  // Relaciones
+  conceptos        ConceptoCotizacion[]
+  facturas         Factura[] // Relación: Una cotización puede generar una o más facturas
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([serie, folio])
+}
+
+// ==========================================
+// 6. Conceptos de la Cotización
+// ==========================================
+model ConceptoCotizacion {
+  id              String     @id @default(uuid())
+  
+  cotizacionId    String
+  cotizacion      Cotizacion @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+
+  productId       String?
+  product         Product?   @relation(fields: [productId], references: [id])
+
+  // Datos del concepto
+  claveProdServ   String   
+  claveUnidad     String   
+  unidad          String   
+  descripcion     String   
+  cantidad        Decimal  @db.Decimal(15, 6)
+  precioUnitario  Decimal  @db.Decimal(15, 6)
+  descuento       Decimal  @default(0) @db.Decimal(15, 2)
+  importe         Decimal  @db.Decimal(15, 2)
+
+  // Impuestos
+  objetoImpuesto  String   @default("02")
+  ivaTasa         Decimal  @default(0.16) @db.Decimal(5, 4)
+  iepsTasa        Decimal  @default(0.00) @db.Decimal(5, 4)
+  ivaImporte      Decimal  @default(0) @db.Decimal(15, 2)
+  iepsImporte     Decimal  @default(0) @db.Decimal(15, 2)
+
+  createdAt       DateTime @default(now())
+}
