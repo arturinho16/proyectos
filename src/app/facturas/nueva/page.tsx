@@ -466,6 +466,59 @@ export default function NuevaFacturaPage() {
     if (metodoPago === 'PPD') setFormaPago('99');
   }, [metodoPago]);
 
+  // ─── ¡NUEVO! LÓGICA DE AUTO-LLENADO DESDE COTIZACIÓN ─────────────────────
+  useEffect(() => {
+    // Leemos el ID de la cotización directamente de la barra de direcciones
+    const params = new URLSearchParams(window.location.search);
+    const cotizacionId = params.get('cotizacionId');
+
+    if (cotizacionId) {
+      fetch(`/api/cotizaciones/${cotizacionId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) return;
+
+          // 1. Llenamos el Cliente de forma segura
+          if (data.client) {
+            setClienteId(data.clientId);
+            setClienteData(data.client);
+            setUsoCFDI(data.client.usoCfdiDefault || 'G03');
+          } else {
+            // Si por algún motivo la cotización no trajo el cliente, 
+            // no rompemos la app, solo no pre-llenamos el cliente.
+            console.warn("La cotización no tiene un cliente asociado.");
+          }
+
+          // 2. Llenamos los datos comerciales básicos
+          setMoneda(data.moneda || 'MXN');
+          if (data.tipoCambio) setTipoCambio(data.tipoCambio);
+          if (data.condicionesPago) setCondicionesPago(data.condicionesPago);
+          if (data.notas) setNotas(data.notas);
+
+          // 3. Llenamos los Conceptos transformándolos al formato de Factura
+          if (data.conceptos && data.conceptos.length > 0) {
+            const conceptosFormateados = data.conceptos.map((c: any) => ({
+              productoId: c.productId || '',
+              descripcion: c.descripcion,
+              claveProdServ: c.claveProdServ,
+              claveUnidad: c.claveUnidad,
+              unidad: c.unidad,
+              cantidad: Number(c.cantidad),
+              precioUnitario: Number(c.precioUnitario),
+              descuento: Number(c.descuento || 0),
+              descuentoPct: 0,
+              ivaTasa: Number(c.ivaTasa),
+              iepsTasa: Number(c.iepsTasa || 0),
+              objetoImpuesto: c.objetoImpuesto,
+            }));
+            setConceptos(conceptosFormateados);
+          }
+        })
+        .catch(err => console.error("Error cargando la cotización:", err));
+    }
+  }, []);
+  // ────────────────────────────────────────────────────────────────────────
+
   const handleClienteSelect = (c: Client) => {
     setClienteId(c.id);
     setClienteData(c);
@@ -796,9 +849,9 @@ export default function NuevaFacturaPage() {
                     <div className="space-y-1">
                       <label className="text-xs font-bold uppercase text-slate-500">Cantidad</label>
                       <input
-                        type="number" min="0.001" step="0.001"
+                        type="number" min="1" step="1"
                         value={c.cantidad}
-                        onChange={e => handleConceptoField(i, 'cantidad', parseFloat(e.target.value) || 0)}
+                        onChange={e => handleConceptoField(i, 'cantidad', parseInt(e.target.value, 10) || 1)}
                         className="w-full p-2.5 border rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
