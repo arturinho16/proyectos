@@ -1,3 +1,55 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+
+    /* ==========================================================
+       1. TAMAÑO DE LETRA GENERAL DEL SISTEMA (Tablas, textos)
+       ========================================================== */
+    body {
+        @apply !text-[15px];
+        /* Tamaño en celulares (15px) */
+    }
+
+    @screen sm {
+        body {
+            @apply !text-base;
+            /* Tamaño en computadoras (16px) */
+        }
+    }
+
+    /* ==========================================================
+       2. BORDES Y TAMAÑO DE LETRA DE LOS FORMULARIOS
+       (Al usar input:not(...) atrapamos TODOS los campos)
+       ========================================================== */
+    input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea {
+        /* Aquí definimos el grosor (!border-2) y el color (!border-slate-400) */
+        /* La clase !text-base dicta que lo que escribas mida 16px */
+        @apply !border-2 !border-slate-400 !text-base !bg-white !shadow-sm !transition-colors !duration-200;
+    }
+
+    /* EFECTO AL HACER CLIC (Contorno Azul) */
+    input:not([type="file"]):not([type="checkbox"]):not([type="radio"]):focus,
+    select:focus,
+    textarea:focus {
+        @apply !border-blue-600 !ring-4 !ring-blue-600/20 !outline-none;
+    }
+
+    /* ==========================================================
+       3. TAMAÑO DE LETRA DE LOS TÍTULOS (Labels de los inputs)
+       ========================================================== */
+    label {
+        @apply !text-[13px] !text-slate-700 !font-extrabold;
+        /* Títulos a 13px en móvil */
+    }
+
+    @screen sm {
+        label {
+            @apply !text-sm;
+            /* Títulos a 14px en computadoras */
+        }
+    }
+}

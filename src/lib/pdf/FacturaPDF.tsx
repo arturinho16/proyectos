@@ -10,7 +10,7 @@ const fmt = (n: number) =>
 // ─── Estilos ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   page: {
-    fontSize: 8,
+    fontSize: 10,
     padding: 36,
     fontFamily: 'Helvetica',
     color: '#1a1a1a',
@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
   // ── Footer ──
   footer: {
     marginTop: 10,
-    fontSize: 6.5,
+    fontSize: 7.5,
     color: '#9ca3af',
     textAlign: 'center',
     borderTopWidth: 0.5,
