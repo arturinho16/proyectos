@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { FileText, PlusCircle, Search, Trash2, Edit2, FileCheck2, ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 type Client = {
   nombreRazonSocial: string;
@@ -21,6 +22,7 @@ type Cotizacion = {
 };
 
 export default function CotizacionesPage() {
+  const router = useRouter();
   const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -59,7 +61,8 @@ export default function CotizacionesPage() {
   };
 
   const handleFacturar = (id: string) => {
-    alert(`Lógica para convertir la cotización a Factura pendiente.`);
+    // Viajamos a Nueva Factura llevándonos el ID en la URL
+    router.push(`/facturas/nueva?cotizacionId=${id}`);
   };
 
   // Filtrado básico

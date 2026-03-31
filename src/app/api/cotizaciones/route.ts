@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
-      serie = 'COT', // Por defecto usamos la serie COT
+      serie = 'COT',
       folio,
       fecha,
       fechaVencimiento,
@@ -45,30 +45,24 @@ export async function POST(req: NextRequest) {
 
     // Calcular totales exactos (Reglas SAT aplicadas a la cotización)
     let subtotal = 0, totalIVA = 0, totalIEPS = 0, totalDescuento = 0;
-    
+
     for (const c of conceptos) {
-      // 1. El Importe es estricto: Cantidad * Precio Unitario
-      const importeConcepto = Number(c.cantidad) * Number(c.precioUnitario); 
-      
-      // 2. La base para impuestos es Importe - Descuento
-      const baseImpuesto = importeConcepto - Number(c.descuento || 0); 
-      
+      const importeConcepto = Number(c.cantidad) * Number(c.precioUnitario);
+      const baseImpuesto = importeConcepto - Number(c.descuento || 0);
+
       const iva = c.objetoImpuesto !== '01' ? baseImpuesto * Number(c.ivaTasa) : 0;
       const ieps = c.objetoImpuesto !== '01' ? baseImpuesto * Number(c.iepsTasa) : 0;
-      
-      subtotal += importeConcepto; 
+
+      subtotal += importeConcepto;
       totalIVA += iva;
       totalIEPS += ieps;
       totalDescuento += Number(c.descuento || 0);
     }
 
-    // Por ahora las cotizaciones no suelen llevar retenciones, pero dejamos la base lista
-    const retencionIVA = 0; 
+    const retencionIVA = 0;
     const retencionISR = 0;
-    
     const total = subtotal - totalDescuento + totalIVA + totalIEPS - retencionIVA - retencionISR;
 
-    // Verificar que el cliente exista
     const client = await prisma.client.findUnique({ where: { id: clienteId } });
     if (!client) return NextResponse.json({ error: 'Cliente no encontrado' }, { status: 404 });
 
@@ -91,16 +85,16 @@ export async function POST(req: NextRequest) {
         retencionIVA,
         retencionISR,
         total,
-        estado: 'BORRADOR', // Estado inicial
+        estado: 'BORRADOR',
         conceptos: {
           create: conceptos.map((c: any) => {
             const importe = Number(c.cantidad) * Number(c.precioUnitario);
             const baseImp = importe - Number(c.descuento || 0);
             const ivaImporte = c.objetoImpuesto !== '01' ? baseImp * Number(c.ivaTasa) : 0;
             const iepsImporte = c.objetoImpuesto !== '01' ? baseImp * Number(c.iepsTasa) : 0;
-            
+
             return {
-              productId: c.productId || null,
+              productId: c.productoId || null, // <--- EL ERROR ESTABA AQUÍ (decía c.productId)
               claveProdServ: c.claveProdServ,
               claveUnidad: c.claveUnidad,
               unidad: c.unidad,
@@ -108,7 +102,7 @@ export async function POST(req: NextRequest) {
               cantidad: Number(c.cantidad),
               precioUnitario: Number(c.precioUnitario),
               descuento: Number(c.descuento || 0),
-              importe, 
+              importe,
               objetoImpuesto: c.objetoImpuesto,
               ivaTasa: Number(c.ivaTasa),
               iepsTasa: Number(c.iepsTasa || 0),
