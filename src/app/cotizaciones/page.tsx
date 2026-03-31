@@ -64,7 +64,10 @@ export default function CotizacionesPage() {
     // Viajamos a Nueva Factura llevándonos el ID en la URL
     router.push(`/facturas/nueva?cotizacionId=${id}`);
   };
-
+  //boton editar
+  const handleEditar = (id: string) => {
+    router.push(`/cotizaciones/${id}/editar`);
+  };
   // Filtrado básico
   const filteredCotizaciones = cotizaciones.filter(c =>
     c.client?.nombreRazonSocial?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -179,6 +182,11 @@ export default function CotizacionesPage() {
                               <FileText className="w-4 h-4" />
                             </button>
                           )}
+
+                          {/* Botón Editar/Previsualizar (ESTE ES EL QUE TE FALTA) */}
+                          <button onClick={() => handleEditar(cot.id)} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 p-2 rounded-lg transition-all" title="Ver / Editar Cotización">
+                            <Edit2 className="w-4 h-4" />
+                          </button>
 
                           {/* Botón Eliminar */}
                           <button onClick={() => handleDelete(cot.id, `${cot.serie}-${cot.folio}`)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-all" title="Eliminar">
