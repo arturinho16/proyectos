@@ -1,7 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, PlusCircle, Search, Eye, Download, Mail, Loader2, X, Ban, ArrowLeft, Stamp, Copy, Check } from 'lucide-react';
+import {
+  FileText, PlusCircle, Search, Eye, Download, Mail,
+  Loader2, X, Ban, ArrowLeft, Stamp, Copy, Check, Globe
+} from 'lucide-react';
 import Link from 'next/link';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -28,6 +31,7 @@ type Factura = {
   estado: string;
   uuid?: string;
   notas?: string;
+  esGlobal?: boolean;
   client: {
     nombreRazonSocial: string;
     rfc: string;
@@ -47,9 +51,9 @@ type Factura = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const ESTADO_BADGE: Record<string, string> = {
-  BORRADOR: 'bg-amber-100 text-amber-700',
-  TIMBRADO: 'bg-green-100 text-green-700',
-  CANCELADO: 'bg-red-100 text-red-600',
+  BORRADOR: 'bg-amber-100 text-amber-700 border border-amber-200',
+  TIMBRADO: 'bg-green-100 text-green-700 border border-green-200',
+  CANCELADO: 'bg-red-100 text-red-600 border border-red-200',
 };
 
 const fmt = (n: number) =>
@@ -83,18 +87,17 @@ function ModalCorreo({
   const [correo, setCorreo] = useState(factura.client.email || '');
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-800">Enviar Factura por Correo</h2>
+          <h2 className="text-lg font-bold text-slate-800">Enviar por Correo</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="bg-slate-50 rounded-xl p-3 text-base text-slate-700 space-y-1">
-          <p><span className="font-bold">Factura:</span> {factura.serie}-{factura.folio}</p>
+        <div className="bg-slate-50 rounded-xl p-4 text-base text-slate-700 space-y-1 border border-slate-100">
+          <p><span className="font-bold">Documento:</span> {factura.serie}-{factura.folio}</p>
           <p><span className="font-bold">Cliente:</span> {factura.client.nombreRazonSocial}</p>
-          <p><span className="font-bold">Total:</span> {fmt(Number(factura.total))}</p>
         </div>
         <div className="space-y-1">
           <label className="text-sm font-bold uppercase text-slate-500">Correo destino</label>
@@ -102,8 +105,7 @@ function ModalCorreo({
             type="email"
             value={correo}
             onChange={e => setCorreo(e.target.value)}
-            placeholder="correo@ejemplo.com"
-            className="w-full p-2.5 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500 text-base"
+            className="w-full p-3 border-2 border-slate-300 rounded-xl outline-none focus:ring-4 focus:ring-purple-500/10 text-base"
           />
         </div>
         {mensaje && (
@@ -112,18 +114,16 @@ function ModalCorreo({
           </p>
         )}
         <div className="flex gap-3 pt-2">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 text-base font-medium"
-          >
+          <button onClick={onClose} className="flex-1 py-3 border-2 border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 text-base font-bold">
             Cancelar
           </button>
           <button
             onClick={() => onEnviar(correo)}
             disabled={enviando || !correo}
-            className="flex-1 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 disabled:opacity-50 text-base font-bold flex items-center justify-center gap-2"
+            className="flex-1 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 disabled:opacity-50 text-base font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-100"
           >
-            {enviando ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando...</> : <><Mail className="w-4 h-4" /> Enviar</>}
+            {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+            {enviando ? 'Enviando...' : 'Enviar'}
           </button>
         </div>
       </div>
@@ -137,15 +137,13 @@ export default function FacturasPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
-  const [desde, setDesde] = useState('');
-  const [hasta, setHasta] = useState('');
 
-  // Controles de tabla
-  const [expandida, setExpandida] = useState<string | null>(null);
+  // Paginación
   const [paginaActual, setPaginaActual] = useState(1);
-  const ITEMS_POR_PAGINA = 10; // ← Aquí puedes cambiar cuántas se ven por página
+  const ITEMS_POR_PAGINA = 10;
 
-  // Controles de botones
+  // Estados de UI
+  const [expandida, setExpandida] = useState<string | null>(null);
   const [descargando, setDescargando] = useState<string | null>(null);
   const [facturaCorreo, setFacturaCorreo] = useState<Factura | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -154,48 +152,45 @@ export default function FacturasPage() {
   const [timbrando, setTimbrando] = useState<string | null>(null);
   const [copiado, setCopiado] = useState<string | null>(null);
 
-  // Carga inicial (Ya no manda la "q" al servidor, nos traemos todo el rango de fechas para filtrar localmente a la velocidad de la luz)
   const cargar = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (filtroEstado) params.set('estado', filtroEstado);
-    if (desde) params.set('desde', desde);
-    if (hasta) params.set('hasta', hasta);
-    const res = await fetch(`/api/facturas?${params}`);
-    const data = await res.json();
-    setFacturas(Array.isArray(data) ? data : []);
-    setLoading(false);
-  }, [filtroEstado, desde, hasta]);
+    try {
+      const res = await fetch('/api/facturas');
+      const data = await res.json();
+      setFacturas(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error cargando facturas:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => { setPaginaActual(1); }, [q, filtroEstado]);
 
-  // Regresar a la página 1 cada que se escribe algo en el buscador
-  useEffect(() => {
-    setPaginaActual(1);
-  }, [q, filtroEstado, desde, hasta]);
-
-  // ─── MAGIA: Filtrado Local y Paginación ───
+  // ── Filtrado Local (Búsqueda Universal) ──
   const facturasFiltradas = facturas.filter(f => {
-    if (!q) return true;
     const busqueda = q.toLowerCase();
-    return (
-      f.serie.toLowerCase().includes(busqueda) ||
-      f.folio.toLowerCase().includes(busqueda) ||
+    const coincideTexto = !q ||
       f.client.nombreRazonSocial.toLowerCase().includes(busqueda) ||
-      f.client.rfc.toLowerCase().includes(busqueda)
-    );
+      f.client.rfc.toLowerCase().includes(busqueda) ||
+      f.serie.toLowerCase().includes(busqueda) ||
+      f.folio.toLowerCase().includes(busqueda);
+
+    const coincideEstado = !filtroEstado || f.estado === filtroEstado;
+
+    return coincideTexto && coincideEstado;
   });
 
   const totalPaginas = Math.ceil(facturasFiltradas.length / ITEMS_POR_PAGINA);
   const startIndex = (paginaActual - 1) * ITEMS_POR_PAGINA;
   const facturasPaginadas = facturasFiltradas.slice(startIndex, startIndex + ITEMS_POR_PAGINA);
 
-  // Totales dinámicos basados en la búsqueda
   const totalGeneral = facturasFiltradas
     .filter(f => f.estado !== 'CANCELADO')
     .reduce((acc, f) => acc + Number(f.total), 0);
 
-  // ─── Funciones de Acciones ───
+  // ── Acciones (Timbrar, Cancelar, Descargar) ──
   const handleDescargar = async (f: Factura, e: React.MouseEvent) => {
     e.stopPropagation();
     setDescargando(f.id);
@@ -204,255 +199,173 @@ export default function FacturasPage() {
       const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF');
       const React = (await import('react')).default;
 
-      const direccionReceptor = [
-        f.client.calle, f.client.numExterior ? `#${f.client.numExterior}` : '',
-        f.client.numInterior ? `Int. ${f.client.numInterior}` : '',
-        f.client.colonia, f.client.municipio, f.client.estado,
-      ].filter(Boolean).join(', ');
-
       const facturaData = {
         folio: f.folio, serie: f.serie, fecha: fmtFecha(f.fecha), estado: f.estado, uuid: f.uuid, emisor: EMISOR,
-        receptor: { nombre: f.client.nombreRazonSocial, rfc: f.client.rfc, direccion: direccionReceptor || undefined, cp: f.client.cp, usoCfdi: f.client.usoCfdiDefault, regimenFiscal: f.client.regimenFiscal },
-        conceptos: f.conceptos.map(c => ({ claveProdServ: c.claveProdServ || '01010101', cantidad: Number(c.cantidad), claveUnidad: c.claveUnidad || 'H87', descripcion: c.descripcion, valorUnitario: Number(c.precioUnitario ?? (Number(c.importe) / Number(c.cantidad))), importe: Number(c.importe) })),
-        subtotal: Number(f.subtotal), iva: Number(f.totalIVA), total: Number(f.total), moneda: f.moneda || 'MXN - Peso Mexicano', formaPago: f.formaPago, metodoPago: f.metodoPago,
+        receptor: { nombre: f.client.nombreRazonSocial, rfc: f.client.rfc, cp: f.client.cp, regimenFiscal: f.client.regimenFiscal },
+        conceptos: f.conceptos.map(c => ({ claveProdServ: c.claveProdServ, cantidad: c.cantidad, descripcion: c.descripcion, valorUnitario: c.precioUnitario, importe: c.importe })),
+        subtotal: f.subtotal, iva: f.totalIVA, total: f.total, moneda: f.moneda, formaPago: f.formaPago, metodoPago: f.metodoPago
       };
 
-      const blob = await pdf(React.createElement(FacturaPDF, { factura: facturaData, logoUrl: '/logo-tufisti.png' })).toBlob();
+      const blob = await pdf(React.createElement(FacturaPDF, { factura: facturaData as any, logoUrl: '/logo-tufisti.png' })).toBlob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = `Factura-${f.serie}${f.folio}.pdf`; a.click(); URL.revokeObjectURL(url);
-    } catch (err) { alert('❌ Error al generar el PDF.'); } finally { setDescargando(null); }
-  };
-
-  const handleEnviarCorreo = async (correo: string) => {
-    if (!facturaCorreo) return;
-    setEnviando(true); setMsgCorreo('');
-    try {
-      const { pdf } = await import('@react-pdf/renderer');
-      const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF');
-      const React = (await import('react')).default;
-
-      const direccionReceptor = [facturaCorreo.client.calle, facturaCorreo.client.numExterior ? `#${facturaCorreo.client.numExterior}` : '', facturaCorreo.client.colonia, facturaCorreo.client.municipio, facturaCorreo.client.estado].filter(Boolean).join(', ');
-
-      const facturaData = {
-        folio: facturaCorreo.folio, serie: facturaCorreo.serie, fecha: fmtFecha(facturaCorreo.fecha), estado: facturaCorreo.estado, uuid: facturaCorreo.uuid, emisor: EMISOR,
-        receptor: { nombre: facturaCorreo.client.nombreRazonSocial, rfc: facturaCorreo.client.rfc, direccion: direccionReceptor || undefined, cp: facturaCorreo.client.cp, usoCfdi: facturaCorreo.client.usoCfdiDefault, regimenFiscal: facturaCorreo.client.regimenFiscal },
-        conceptos: facturaCorreo.conceptos.map(c => ({ claveProdServ: c.claveProdServ || '01010101', cantidad: Number(c.cantidad), claveUnidad: c.claveUnidad || 'H87', descripcion: c.descripcion, valorUnitario: Number(c.precioUnitario ?? (Number(c.importe) / Number(c.cantidad))), importe: Number(c.importe) })),
-        subtotal: Number(facturaCorreo.subtotal), iva: Number(facturaCorreo.totalIVA), total: Number(facturaCorreo.total), moneda: facturaCorreo.moneda || 'MXN', formaPago: facturaCorreo.formaPago, metodoPago: facturaCorreo.metodoPago,
-      };
-
-      const blob = await pdf(React.createElement(FacturaPDF, { factura: facturaData, logoUrl: '/logo-tufisti.png' })).toBlob();
-      const reader = new FileReader(); reader.readAsDataURL(blob);
-      reader.onloadend = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        const res = await fetch(`/api/facturas/${facturaCorreo.id}/enviar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ destinatario: correo, pdfBase64: base64 }) });
-        const data = await res.json();
-        setMsgCorreo(data.ok ? `✅ ${data.mensaje}` : `❌ ${data.error}`);
-        setEnviando(false);
-        if (data.ok) setTimeout(() => { setFacturaCorreo(null); setMsgCorreo(''); }, 2000);
-      };
-    } catch (err) { setMsgCorreo('❌ Error al generar o enviar el PDF'); setEnviando(false); }
-  };
-
-  const handleCancelar = async (f: Factura, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm(`¿Cancelar la factura ${f.serie}-${f.folio}?\nEsta acción no se puede deshacer.`)) return;
-    setCancelando(f.id);
-    try {
-      const res = await fetch(`/api/facturas/${f.id}/cancelar`, { method: 'PATCH' });
-      if (res.ok) await cargar(); else { const err = await res.json().catch(() => ({})); alert(`❌ ${err.error || 'No se pudo cancelar'}`); }
-    } catch { alert('❌ Error de conexión al cancelar'); } finally { setCancelando(null); }
-  };
-
-  const handleCopiar = (texto: string, id: string) => {
-    navigator.clipboard.writeText(texto);
-    setCopiado(id);
-    setTimeout(() => setCopiado(null), 2000);
+      const a = document.createElement('a'); a.href = url; a.download = `Factura-${f.serie}${f.folio}.pdf`; a.click();
+    } finally { setDescargando(null); }
   };
 
   const handleTimbrar = async (f: Factura, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm(`¿Timbrar la factura ${f.serie}-${f.folio}?\nEsta acción enviará el CFDI al SAT.`)) return;
+    if (!confirm('¿Deseas timbrar este documento ante el SAT?')) return;
     setTimbrando(f.id);
     try {
       const res = await fetch(`/api/facturas/${f.id}/timbrar`, { method: 'POST' });
       const data = await res.json();
-      if (data.ok) { alert(`✅ Timbrado exitoso\nUUID: ${data.uuid}`); await cargar(); } else alert(`❌ Error: ${data.error}`);
-    } catch { alert('❌ Error de conexión al timbrar'); } finally { setTimbrando(null); }
+      if (data.ok) { alert('✅ Timbrado con éxito'); cargar(); } else alert(`❌ Error: ${data.error}`);
+    } finally { setTimbrando(null); }
   };
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-800">
       {facturaCorreo && (
-        <ModalCorreo factura={facturaCorreo} onClose={() => { setFacturaCorreo(null); setMsgCorreo(''); }} onEnviar={handleEnviarCorreo} enviando={enviando} mensaje={msgCorreo} />
+        <ModalCorreo factura={facturaCorreo} onClose={() => setFacturaCorreo(null)} onEnviar={() => { }} enviando={enviando} mensaje={msgCorreo} />
       )}
 
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 font-bold text-base transition-colors">
-            <ArrowLeft className="w-5 h-5" /> Panel
-          </Link>
-          <FileText className="w-8 h-8 text-blue-600 ml-2" />
-          <h1 className="text-3xl font-bold">Facturas</h1>
-          <Link href="/facturas/nueva" className="ml-auto flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-all font-bold text-base shadow-lg shadow-blue-200">
-            <PlusCircle className="w-5 h-5" /> Nueva Factura
-          </Link>
+
+        {/* Header con Acceso PRO a Factura Global */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 font-bold transition-colors">
+              <ArrowLeft className="w-5 h-5" /> Panel
+            </Link>
+            <FileText className="w-8 h-8 text-blue-600 ml-2" />
+            <h1 className="text-3xl font-bold">Facturas</h1>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Link
+              href="/facturas/global"
+              className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition-all font-bold text-base shadow-lg shadow-indigo-100"
+            >
+              <Globe className="w-5 h-5" /> Factura Global
+            </Link>
+            <Link
+              href="/facturas/nueva"
+              className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-all font-bold text-base shadow-lg shadow-blue-100"
+            >
+              <PlusCircle className="w-5 h-5" /> Nueva Factura
+            </Link>
+          </div>
         </div>
 
-        {/* KPIs Dinámicos */}
+        {/* KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: q ? 'Facturas encontradas' : 'Total facturas', value: facturasFiltradas.length, color: 'text-slate-700' },
-            { label: 'Borradores', value: facturasFiltradas.filter(f => f.estado === 'BORRADOR').length, color: 'text-amber-600' },
+            { label: 'Total Encontradas', value: facturasFiltradas.length, color: 'text-slate-700' },
             { label: 'Timbradas', value: facturasFiltradas.filter(f => f.estado === 'TIMBRADO').length, color: 'text-green-600' },
-            { label: 'Monto total', value: fmt(totalGeneral), color: 'text-blue-700' },
+            { label: 'Borradores', value: facturasFiltradas.filter(f => f.estado === 'BORRADOR').length, color: 'text-amber-600' },
+            { label: 'Monto Total', value: fmt(totalGeneral), color: 'text-blue-700' },
           ].map(k => (
             <div key={k.label} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-              <div className="text-sm font-bold uppercase text-slate-500 mb-1">{k.label}</div>
-              <div className={`text-2xl sm:text-3xl font-bold ${k.color}`}>{k.value}</div>
+              <div className="text-xs font-bold uppercase text-slate-500 mb-1">{k.label}</div>
+              <div className={`text-2xl font-bold ${k.color}`}>{k.value}</div>
             </div>
           ))}
         </div>
 
-        {/* Filtros */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="flex-1 min-w-[250px] relative">
-              <Search className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
-              <input
-                value={q}
-                onChange={e => setQ(e.target.value)}
-                placeholder="Buscar por cliente, RFC, serie o folio..."
-                className="w-full pl-10 p-3 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 text-base"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-bold uppercase text-slate-500">Estado</label>
-              <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} className="p-3 border rounded-xl bg-slate-50 outline-none text-base">
-                <option value="">Todos</option><option value="BORRADOR">Borrador</option><option value="TIMBRADO">Timbrado</option><option value="CANCELADO">Cancelado</option>
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-bold uppercase text-slate-500">Desde</label>
-              <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className="p-3 border rounded-xl bg-slate-50 outline-none text-base" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-bold uppercase text-slate-500">Hasta</label>
-              <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className="p-3 border rounded-xl bg-slate-50 outline-none text-base" />
-            </div>
-            {(q || filtroEstado || desde || hasta) && (
-              <button onClick={() => { setQ(''); setFiltroEstado(''); setDesde(''); setHasta(''); }} className="p-3 border border-red-200 text-red-500 font-bold rounded-xl hover:bg-red-50 text-base">
-                Limpiar filtros
-              </button>
-            )}
+        {/* Buscador Universal */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-wrap gap-4 items-center">
+          <div className="flex-1 min-w-[300px] relative">
+            <Search className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
+            <input
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Buscar por cliente, RFC, serie o folio..."
+              className="w-full pl-10 p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500 text-base"
+            />
           </div>
+          <select
+            value={filtroEstado}
+            onChange={e => setFiltroEstado(e.target.value)}
+            className="p-3 border-2 border-slate-200 rounded-xl outline-none text-base bg-white"
+          >
+            <option value="">Todos los estados</option>
+            <option value="BORRADOR">Borrador</option>
+            <option value="TIMBRADO">Timbrado</option>
+            <option value="CANCELADO">Cancelado</option>
+          </select>
         </div>
 
-        {/* Tabla */}
+        {/* Tabla con Paginación */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-          {loading ? (
-            <div className="p-12 text-center text-slate-400 flex items-center justify-center gap-2 text-base">
-              <Loader2 className="w-6 h-6 animate-spin" /> Cargando facturas...
-            </div>
-          ) : facturasFiltradas.length === 0 ? (
-            <div className="p-12 text-center">
-              <FileText className="w-12 h-12 text-slate-200 mx-auto mb-3" />
-              <p className="text-slate-500 text-base">No se encontraron facturas</p>
-              {!q && !filtroEstado && !desde && !hasta && (
-                <Link href="/facturas/nueva" className="mt-4 inline-block text-blue-600 text-base font-bold hover:underline">+ Crear primera factura</Link>
-              )}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-base">
-                <thead className="bg-slate-100 border-b border-slate-200">
-                  <tr>
-                    {['Serie/Folio', 'Fecha', 'Cliente', 'RFC', 'Conceptos', 'Subtotal', 'IVA', 'Total', 'Estado', 'Acciones'].map(h => (
-                      <th key={h} className="text-left px-5 py-4 text-sm font-bold uppercase text-slate-500 whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {facturasPaginadas.map(f => (
+          <div className="overflow-x-auto">
+            <table className="w-full text-base text-left">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  {['Folio', 'Fecha', 'Cliente / RFC', 'Total', 'Estado', 'Acciones'].map(h => (
+                    <th key={h} className="px-6 py-4 text-sm font-bold uppercase text-slate-500">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
+                  <tr><td colSpan={6} className="p-12 text-center text-slate-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></td></tr>
+                ) : facturasPaginadas.length === 0 ? (
+                  <tr><td colSpan={6} className="p-12 text-center text-slate-500">No se encontraron documentos</td></tr>
+                ) : (
+                  facturasPaginadas.map(f => (
                     <React.Fragment key={f.id}>
-                      <tr className="hover:bg-slate-50 cursor-pointer transition-colors" onClick={() => setExpandida(expandida === f.id ? null : f.id)}>
-                        <td className="px-5 py-4 font-mono font-bold text-blue-700 whitespace-nowrap">{f.serie}-{f.folio}</td>
-                        <td className="px-5 py-4 text-slate-600 whitespace-nowrap">{fmtFecha(f.fecha)}</td>
-                        <td className="px-5 py-4 font-medium text-slate-800 max-w-[200px] truncate" title={f.client.nombreRazonSocial}>{f.client.nombreRazonSocial}</td>
-                        <td className="px-5 py-4 font-mono text-sm text-slate-500 whitespace-nowrap">{f.client.rfc}</td>
-                        <td className="px-5 py-4 text-slate-600 whitespace-nowrap">{f.conceptos.length} concepto{f.conceptos.length !== 1 ? 's' : ''}</td>
-                        <td className="px-5 py-4 font-mono text-slate-700 whitespace-nowrap">{fmt(Number(f.subtotal))}</td>
-                        <td className="px-5 py-4 font-mono text-orange-600 whitespace-nowrap">{fmt(Number(f.totalIVA))}</td>
-                        <td className="px-5 py-4 font-mono font-bold text-blue-900 whitespace-nowrap">{fmt(Number(f.total))}</td>
-                        <td className="px-5 py-4 whitespace-nowrap">
-                          <span className={`px-3 py-1.5 rounded-lg text-sm font-bold ${ESTADO_BADGE[f.estado] || 'bg-slate-100 text-slate-600'}`}>{f.estado}</span>
+                      <tr className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => setExpandida(expandida === f.id ? null : f.id)}>
+                        <td className="px-6 py-4 font-mono font-bold text-blue-700">{f.serie}-{f.folio}</td>
+                        <td className="px-6 py-4 text-slate-600">{fmtFecha(f.fecha)}</td>
+                        <td className="px-6 py-4">
+                          <div className="font-bold text-slate-800">{f.client.nombreRazonSocial}</div>
+                          <div className="text-sm font-mono text-slate-500 uppercase">{f.client.rfc}</div>
                         </td>
-                        <td className="px-5 py-4 whitespace-nowrap">
-                          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                            <button title="Ver detalle" onClick={() => setExpandida(expandida === f.id ? null : f.id)} className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"><Eye className="w-5 h-5" /></button>
-                            <button title="Descargar PDF" onClick={(e) => handleDescargar(f, e)} disabled={descargando === f.id} className="p-2 rounded-lg text-slate-400 hover:text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">{descargando === f.id ? <Loader2 className="w-5 h-5 animate-spin text-green-500" /> : <Download className="w-5 h-5" />}</button>
-                            <button title="Enviar por correo" onClick={(e) => { e.stopPropagation(); setFacturaCorreo(f); setMsgCorreo(''); }} className="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors"><Mail className="w-5 h-5" /></button>
+                        <td className="px-6 py-4 font-mono font-bold">{fmt(f.total)}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-3 py-1 rounded-lg text-sm font-bold ${ESTADO_BADGE[f.estado]}`}>
+                            {f.estado}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => setExpandida(expandida === f.id ? null : f.id)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Eye className="w-5 h-5" /></button>
+                            <button onClick={(e) => handleDescargar(f, e)} disabled={descargando === f.id} className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
+                              {descargando === f.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+                            </button>
                             {f.estado === 'BORRADOR' && (
-                              <button title="Timbrar factura" onClick={(e) => handleTimbrar(f, e)} disabled={timbrando === f.id} className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50">{timbrando === f.id ? <Loader2 className="w-5 h-5 animate-spin text-blue-500" /> : <Stamp className="w-5 h-5" />}</button>
-                            )}
-                            {f.estado !== 'CANCELADO' && (
-                              <button title="Cancelar factura" onClick={(e) => handleCancelar(f, e)} disabled={cancelando === f.id} className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">{cancelando === f.id ? <Loader2 className="w-5 h-5 animate-spin text-red-500" /> : <Ban className="w-5 h-5" />}</button>
+                              <button onClick={(e) => handleTimbrar(f, e)} disabled={timbrando === f.id} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                                {timbrando === f.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Stamp className="w-5 h-5" />}
+                              </button>
                             )}
                           </div>
                         </td>
                       </tr>
-
-                      {expandida === f.id && (
-                        <tr key={`${f.id}-detail`} className="bg-blue-50/40">
-                          <td colSpan={10} className="px-8 py-6">
-                            <div className="space-y-3">
-                              <div className="text-sm font-bold uppercase text-slate-500 mb-2">Conceptos Detallados</div>
-                              {f.conceptos.map((c, i) => (
-                                <div key={i} className="flex justify-between text-base text-slate-700 bg-white rounded-xl px-5 py-3 border border-slate-200 shadow-sm">
-                                  <span className="font-medium">{c.descripcion}</span>
-                                  <span className="font-mono text-slate-500">x{Number(c.cantidad)}</span>
-                                  <span className="font-mono font-bold text-blue-800">{fmt(Number(c.importe))}</span>
-                                </div>
-                              ))}
-                              {f.notas && <div className="text-sm text-slate-500 mt-3 italic bg-white p-3 rounded-lg border border-slate-200">📝 <span className="font-medium">Notas:</span> {f.notas}</div>}
-                              {f.uuid && <div className="text-sm font-mono text-green-700 mt-2 bg-green-50 p-2 rounded-lg border border-green-100 inline-block"><span className="font-bold">UUID:</span> {f.uuid}</div>}
-                              <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-200">
-                                <span className="text-sm font-bold uppercase text-slate-500">ID interno:</span>
-                                <span className="text-sm font-mono text-slate-600 truncate">{f.id}</span>
-                                <button onClick={() => handleCopiar(f.id, f.id)} className="ml-auto p-1.5 rounded-lg text-slate-500 hover:text-blue-700 hover:bg-blue-100 transition-colors" title="Copiar ID">{copiado === f.id ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}</button>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
                     </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
 
-          {/* ── NUEVO: Barra de Paginación ── */}
+          {/* Barra de Paginación */}
           {totalPaginas > 1 && (
-            <div className="flex items-center justify-between px-5 py-4 border-t border-slate-200 bg-slate-50 mt-auto">
+            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-between mt-auto">
               <span className="text-sm text-slate-500 font-medium">
-                Mostrando {startIndex + 1} a {Math.min(startIndex + ITEMS_POR_PAGINA, facturasFiltradas.length)} de {facturasFiltradas.length} facturas
+                Página {paginaActual} de {totalPaginas} ({facturasFiltradas.length} resultados)
               </span>
               <div className="flex gap-2">
                 <button
                   onClick={() => setPaginaActual(p => Math.max(1, p - 1))}
                   disabled={paginaActual === 1}
-                  className="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50 transition-colors"
+                  className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-100 disabled:opacity-50"
                 >
                   Anterior
                 </button>
-                <div className="flex items-center justify-center px-4 font-bold text-slate-700">
-                  Página {paginaActual} de {totalPaginas}
-                </div>
                 <button
                   onClick={() => setPaginaActual(p => Math.min(totalPaginas, p + 1))}
                   disabled={paginaActual === totalPaginas}
-                  className="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50 transition-colors"
+                  className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-100 disabled:opacity-50"
                 >
                   Siguiente
                 </button>

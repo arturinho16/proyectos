@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Users, Package, FileText, BarChart3, PlusCircle, Receipt, FileCheck, Menu, X } from 'lucide-react';
+import { Users, Package, FileText, BarChart3, PlusCircle, Receipt, FileCheck, Menu, X, Globe } from 'lucide-react';
 
 interface ResumenMensual {
   facturasEmitidas: number;
@@ -184,6 +184,16 @@ export default function DashboardPage() {
             <div className="mb-4"><div className="bg-slate-50 p-2.5 rounded-xl inline-block"><FileCheck className="w-6 h-6 sm:w-8 sm:h-8 text-slate-600" /></div></div>
             <h3 className="text-lg sm:text-xl font-bold text-slate-800">Cotizaciones</h3>
             <p className="text-slate-500 text-xs sm:text-sm mt-1">Gestionar y convertir a facturas.</p>
+          </Link>
+          {/* FACTURACION GLOBAL */}
+          <Link href="/facturas/global" className="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border-l-4 border-l-indigo-500 border border-slate-200 hover:shadow-md transition-all group">
+            <div className="mb-4">
+              <div className="bg-indigo-50 p-2.5 rounded-xl inline-block">
+                <Globe className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600" />
+              </div>
+            </div>
+            <h3 className="text-lg sm:text-xl font-bold text-slate-800">Factura Global</h3>
+            <               p className="text-slate-500 text-sm mt-1">Ventas al público en general del periodo.</p>
           </Link>
         </div>
 

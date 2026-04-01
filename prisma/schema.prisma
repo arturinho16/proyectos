@@ -101,7 +101,13 @@ model Factura {
   folio           String
   fecha           DateTime
   lugarExpedicion String  // CP del emisor
-
+  
+  // facturaglobal
+  esGlobal          Boolean @default(false)
+  periodicidad      String? // 01-Diaria, 02-Semanal, etc.
+  mes               String? // 01-Enero, etc.
+  anio              Int?
+  
   // Tipo de comprobante
   tipoComprobante String  @default("I") // I=Ingreso, E=Egreso, T=Traslado, N=Nómina, P=Pago
 

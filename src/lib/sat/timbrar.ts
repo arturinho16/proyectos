@@ -13,12 +13,13 @@ const WSDL_PROD = 'https://facturacion.finkok.com/servicios/soap/stamp.wsdl';
 const xsltPath = join(process.cwd(), 'src/lib/sat/cadena-original.xslt');
 const xsltContent = readFileSync(xsltPath, 'utf8');
 
-// (Tus interfaces se mantienen iguales)
 export interface Concepto {
+  noIdentificacion?: string;
   claveProdServ: string; claveUnidad: string; unidad: string; descripcion: string;
   cantidad: number; precioUnitario: number; descuento: number; importe: number;
   objetoImpuesto: string; ivaTasa: number; iepsTasa: number; ivaImporte: number; iepsImporte: number;
 }
+
 export interface DatosFactura {
   serie: string; folio: string; fecha: Date; lugarExpedicion: string;
   formaPago: string; metodoPago: string; moneda: string; tipoCambio: number;
@@ -26,6 +27,11 @@ export interface DatosFactura {
   descuento: number; totalIVA: number; totalIEPS: number; retencionIVA: number;
   retencionISR: number; total: number; usoCFDI: string; conceptos: Concepto[];
   client: { rfc: string; nombreRazonSocial: string; regimenFiscal: string; cp: string; };
+  // ── NUEVOS CAMPOS PARA GLOBAL ──
+  esGlobal?: boolean;
+  periodicidad?: string;
+  mes?: string;
+  anio?: number;
 }
 
 function formatFechaCfdi(date: Date): string {
@@ -50,7 +56,7 @@ export function generarXMLUnsigned(datos: DatosFactura, noCertificado: string, c
       'xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
       'xsi:schemaLocation': 'http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd',
       Version: '4.0', Serie: datos.serie, Folio: datos.folio, Fecha: fechaStr,
-      Sello: '', // Va vacío al inicio
+      Sello: '',
       FormaPago: datos.formaPago, NoCertificado: noCertificado, Certificado: certificadoB64,
       SubTotal: datos.subtotal.toFixed(2),
       ...(datos.descuento > 0 && { Descuento: datos.descuento.toFixed(2) }),
@@ -61,14 +67,23 @@ export function generarXMLUnsigned(datos: DatosFactura, noCertificado: string, c
       ...(datos.condicionesPago && { CondicionesDePago: datos.condicionesPago }),
     });
 
-  // Emisor con .trim() preventivo
+  // ── PASO 4: AGREGAR INFORMACION GLOBAL SI APLICA ──
+  if (datos.esGlobal && datos.periodicidad && datos.mes && datos.anio) {
+    root.ele('cfdi:InformacionGlobal', {
+      Periodicidad: datos.periodicidad,
+      Meses: datos.mes,
+      Año: datos.anio.toString(),
+    }).up();
+  }
+
+  // Emisor
   root.ele('cfdi:Emisor', {
     Rfc: RFC_EMISOR.trim(),
     Nombre: NOMBRE_EMISOR.trim(),
     RegimenFiscal: REGIMEN_EMISOR.trim()
   }).up();
 
-  // Receptor con .trim() preventivo en todos sus datos
+  // Receptor
   root.ele('cfdi:Receptor', {
     Rfc: datos.client.rfc.trim(),
     Nombre: datos.client.nombreRazonSocial.trim(),
@@ -79,11 +94,11 @@ export function generarXMLUnsigned(datos: DatosFactura, noCertificado: string, c
 
   const conceptosNode = root.ele('cfdi:Conceptos');
   for (const c of datos.conceptos) {
-    const baseParaImpuestos = (c.importe - c.descuento).toFixed(2); // Base obligatoria
+    const baseParaImpuestos = (c.importe - c.descuento).toFixed(2);
 
-    // Conceptos con .trim() en todas las descripciones y claves del SAT
     const concepto = conceptosNode.ele('cfdi:Concepto', {
       ClaveProdServ: c.claveProdServ.trim(),
+      NoIdentificacion: c.noIdentificacion?.trim() || '',
       Cantidad: Number(c.cantidad).toString(),
       ClaveUnidad: c.claveUnidad.trim(),
       Unidad: c.unidad.trim(),
@@ -134,10 +149,10 @@ export function generarXMLUnsigned(datos: DatosFactura, noCertificado: string, c
     }
   }
 
-  return root.end({ prettyPrint: false }); // false garantiza integridad de datos
+  return root.end({ prettyPrint: false });
 }
 
-// 2. Extrae Cadena Original vía XSLT (Con Sanitizador estricto SAT)
+// 2. Extrae Cadena Original vía XSLT
 export async function buildCadenaOriginal(xmlString: string): Promise<string> {
   const xslt = new Xslt();
   const parser = new XmlParser();
@@ -146,21 +161,11 @@ export async function buildCadenaOriginal(xmlString: string): Promise<string> {
   const result = await xslt.xsltProcess(xmlDoc, xsltDoc);
 
   let cadena = result.toString();
-
-  // 1. Limpiar todos los saltos de línea, retornos de carro y tabulaciones
-  cadena = cadena.replace(/[\r\n\t]/g, '');
-
-  // 2. Quitar espacios en blanco a los extremos
-  cadena = cadena.trim();
-
-  // 3. Asegurar que inicie exactamente con "||" (sin importar cómo venga)
+  cadena = cadena.replace(/[\r\n\t]/g, '').trim();
   if (!cadena.startsWith('||')) {
     cadena = '||' + cadena.replace(/^\|+/, '');
   }
-
-  // 4. Asegurar que termine exactamente con "||" (limpiando "|||" o "|")
   cadena = cadena.replace(/\|+$/, '') + '||';
-
   return cadena;
 }
 
@@ -173,22 +178,16 @@ export async function timbrarFactura(datos: DatosFactura): Promise<{ uuid: strin
   const passwordFinkok = process.env.FINKOK_PASSWORD!;
   const ambiente = process.env.FINKOK_AMBIENTE || 'demo';
 
-  // Preparar cert
   const noCertificado = getNoCertificado(cerB64);
   const certificadoB64 = getCertificadoBase64(cerB64);
   const keyPem = keyToPem(keyB64, password);
 
-  // Armar el XML Unsigned
   const xmlSinSello = generarXMLUnsigned(datos, noCertificado, certificadoB64);
-
-  // Cadena Original XSLT y Sello
   const cadenaOriginal = await buildCadenaOriginal(xmlSinSello);
-  console.log("🔑 Cadena Original:", cadenaOriginal); // Útil para depurar
 
   const sello = generarSello(cadenaOriginal, keyPem);
   const xmlFirmado = xmlSinSello.replace('Sello=""', `Sello="${sello}"`);
 
-  // SOAP Finkok
   const wsdl = ambiente === 'demo' ? WSDL_DEMO : WSDL_PROD;
   const client = await soap.createClientAsync(wsdl);
   const xmlBase64 = Buffer.from(xmlFirmado, 'utf-8').toString('base64');
@@ -198,7 +197,6 @@ export async function timbrarFactura(datos: DatosFactura): Promise<{ uuid: strin
 
   if (!stampResult) throw new Error('FINKOK no devolvió respuesta');
 
-  // ¡El validador infalible: Si hay UUID, se timbró con éxito!
   if (!stampResult.UUID) {
     const incidencias = stampResult.Incidencias?.Incidencia;
     const incidencia = Array.isArray(incidencias) ? incidencias[0] : incidencias;
