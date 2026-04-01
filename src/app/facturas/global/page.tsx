@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { Globe, ArrowLeft, Save, Plus, Trash2, Calculator, Info, Loader2, CheckCircle2 } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Globe, ArrowLeft, Save, Plus, Trash2, Calculator, Info, Loader2, CheckCircle2, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -21,20 +21,32 @@ const MESES = [
 
 const ANIOS = [2024, 2025, 2026, 2027];
 
+type Product = { id: string; codigoInterno: string | null; nombre: string; precio: number; ivaTasa: number; };
+type Ticket = { id: number; folio: string; descripcion: string; total: number; productoId?: string; showSuggestions: boolean; };
+
 export default function FacturaGlobalPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Estados de Configuración SAT (Manuales para permitir periodos anteriores)
-  const [periodicidad, setPeriodicidad] = useState('04'); // Mensual por defecto
+  // Catálogo de Productos para autocompletar
+  const [productosBD, setProductosBD] = useState<Product[]>([]);
+
+  // Estados SAT
+  const [periodicidad, setPeriodicidad] = useState('04');
   const [mesSat, setMesSat] = useState(String(new Date().getMonth() + 1).padStart(2, '0'));
   const [anioSat, setAnioSat] = useState(new Date().getFullYear());
 
-  // Listado de Tickets
-  const [tickets, setTickets] = useState([{ id: Date.now(), folio: '', total: 0 }]);
+  // Tickets
+  const [tickets, setTickets] = useState<Ticket[]>([{ id: Date.now(), folio: '', descripcion: '', total: 0, showSuggestions: false }]);
 
-  // Cálculos de totales (Cálculo Inverso para obtener Subtotal e IVA del 16%)
+  useEffect(() => {
+    // Cargar productos para el buscador
+    fetch('/api/products').then(res => res.json()).then(data => {
+      if (Array.isArray(data)) setProductosBD(data);
+    });
+  }, []);
+
   const resumen = useMemo(() => {
     const totalGlobal = tickets.reduce((acc, t) => acc + Number(t.total || 0), 0);
     const subtotal = totalGlobal / 1.16;
@@ -42,22 +54,45 @@ export default function FacturaGlobalPage() {
     return { subtotal, iva, total: totalGlobal };
   }, [tickets]);
 
-  const addTicket = () => setTickets([...tickets, { id: Date.now(), folio: '', total: 0 }]);
+  const addTicket = () => setTickets([...tickets, { id: Date.now(), folio: '', descripcion: '', total: 0, showSuggestions: false }]);
   const removeTicket = (id: number) => setTickets(tickets.filter(t => t.id !== id));
+
   const updateTicket = (id: number, field: string, value: any) => {
-    setTickets(tickets.map(t => t.id === id ? { ...t, [field]: value } : t));
+    setTickets(tickets.map(t => {
+      if (t.id === id) {
+        const updated = { ...t, [field]: value };
+        if (field === 'descripcion') updated.showSuggestions = true;
+        return updated;
+      }
+      return t;
+    }));
+  };
+
+  const selectProduct = (ticketId: number, prod: Product) => {
+    const precioBase = Number(prod.precio);
+    const iva = precioBase * Number(prod.ivaTasa);
+    const totalConIva = precioBase + iva;
+
+    setTickets(tickets.map(t => t.id === ticketId ? {
+      ...t,
+      descripcion: prod.nombre,
+      productoId: prod.id,
+      total: totalConIva,
+      showSuggestions: false
+    } : t));
   };
 
   const handleTimbrar = async () => {
-    if (tickets.some(t => !t.folio || t.total <= 0)) {
-      alert("Por favor, ingresa el folio y monto de todos los tickets.");
+    // Validación rápida
+    if (tickets.some(t => !t.descripcion || t.total <= 0)) {
+      alert("Todos los tickets deben tener al menos Descripción y un Monto mayor a 0.");
       return;
     }
 
     setLoading(true);
     try {
       const payload = {
-        serie: 'G',
+        serie: 'FG',
         folio: String(Date.now()).slice(-6),
         fecha: new Date().toISOString(),
         lugarExpedicion: '42000',
@@ -67,35 +102,39 @@ export default function FacturaGlobalPage() {
         metodoPago: 'PUE',
         tipoComprobante: 'I',
         usoCFDI: 'S01',
-        // Datos del Receptor Fijos (Público en General)
         receptorManual: {
           rfc: 'XAXX010101000',
           nombre: 'PUBLICO EN GENERAL',
           cp: '42000',
           regimenFiscal: '616'
         },
-        // Información Global SAT
         esGlobal: true,
         periodicidad,
         mes: mesSat,
         anio: anioSat,
-        // Conceptos: Un concepto por cada Ticket
-        conceptos: tickets.map(t => ({
-          noIdentificacion: t.folio, // El folio del ticket va aquí
-          claveProdServ: '01010101', // Obligatorio para Global
-          claveUnidad: 'ACT',
-          unidad: 'Actividad',
-          descripcion: `Venta correspondiente al ticket #${t.folio}`,
-          cantidad: 1,
-          precioUnitario: Number(t.total) / 1.16,
-          importe: Number(t.total) / 1.16,
-          descuento: 0,
-          objetoImpuesto: '02',
-          ivaTasa: 0.16,
-          iepsTasa: 0,
-          ivaImporte: (Number(t.total) / 1.16) * 0.16,
-          iepsImporte: 0
-        }))
+        conceptos: tickets.map((t, index) => {
+          // Si no puso folio, inventamos uno para cumplir con el SAT
+          const folioSeguro = t.folio.trim() || `TICKET-${Date.now().toString().slice(-4)}-${index}`;
+
+          return {
+            productId: t.productoId || null,
+            noIdentificacion: folioSeguro,
+            claveProdServ: '01010101',
+            claveUnidad: 'ACT',
+            unidad: 'Actividad',
+            // El SAT requiere que empiece con "Venta" en globales, así que combinamos:
+            descripcion: `Venta - ${t.descripcion}`,
+            cantidad: 1,
+            precioUnitario: Number(t.total) / 1.16,
+            importe: Number(t.total) / 1.16,
+            descuento: 0,
+            objetoImpuesto: '02',
+            ivaTasa: 0.16,
+            iepsTasa: 0,
+            ivaImporte: (Number(t.total) / 1.16) * 0.16,
+            iepsImporte: 0
+          };
+        })
       };
 
       const res = await fetch('/api/facturas', {
@@ -132,7 +171,7 @@ export default function FacturaGlobalPage() {
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-800">
-      <div className="max-w-5xl mx-auto space-y-6">
+      <div className="max-w-6xl mx-auto space-y-6">
 
         {/* Encabezado */}
         <div className="flex items-center justify-between">
@@ -149,96 +188,123 @@ export default function FacturaGlobalPage() {
           </div>
         </div>
 
-        {/* Configuración de Información Global (Manual) */}
-        <div className="bg-white p-6 rounded-2xl border-2 border-slate-300 shadow-sm">
-          <h3 className="text-sm font-black text-indigo-600 uppercase mb-4 flex items-center gap-2">
-            <Info className="w-4 h-4" /> Configuración del Periodo (SAT)
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-1">
-              <label className="text-sm font-black text-slate-500 uppercase">Periodicidad</label>
-              <select
-                value={periodicidad}
-                onChange={e => setPeriodicidad(e.target.value)}
-                className="w-full p-3 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none font-bold"
-              >
-                {PERIODICIDADES.map(p => <option key={p.c} value={p.c}>{p.d}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-black text-slate-500 uppercase">Mes correspondiente</label>
-              <select
-                value={mesSat}
-                onChange={e => setMesSat(e.target.value)}
-                className="w-full p-3 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none font-bold"
-              >
-                {MESES.map(m => <option key={m.c} value={m.c}>{m.d}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-black text-slate-500 uppercase">Año</label>
-              <select
-                value={anioSat}
-                onChange={e => setAnioSat(Number(e.target.value))}
-                className="w-full p-3 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none font-bold"
-              >
-                {ANIOS.map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </div>
+        {/* Configuración de Información Global */}
+        <div className="bg-white p-6 rounded-2xl border-2 border-slate-300 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="space-y-1">
+            <label className="text-sm font-black text-slate-500 uppercase">Periodicidad</label>
+            <select value={periodicidad} onChange={e => setPeriodicidad(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none font-bold">
+              {PERIODICIDADES.map(p => <option key={p.c} value={p.c}>{p.d}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-black text-slate-500 uppercase">Mes correspondiente</label>
+            <select value={mesSat} onChange={e => setMesSat(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none font-bold">
+              {MESES.map(m => <option key={m.c} value={m.c}>{m.d}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-black text-slate-500 uppercase">Año</label>
+            <select value={anioSat} onChange={e => setAnioSat(Number(e.target.value))} className="w-full p-3 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none font-bold">
+              {ANIOS.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
           </div>
         </div>
 
-        {/* Listado de Tickets */}
-        <div className="bg-white rounded-2xl border-2 border-slate-300 shadow-sm overflow-hidden">
+        {/* Listado de Tickets con Autocompletado */}
+        <div className="bg-white rounded-2xl border-2 border-slate-300 shadow-sm overflow-visible">
           <div className="p-4 bg-slate-50 border-b-2 border-slate-200 flex justify-between items-center">
             <h2 className="font-bold flex items-center gap-2 text-slate-600 uppercase text-sm">
-              <Calculator className="w-4 h-4" /> Tickets a incluir en la global
+              <Calculator className="w-4 h-4" /> Registro de Ventas (Tickets)
             </h2>
             <button onClick={addTicket} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-md">
-              <Plus className="w-4 h-4" /> Agregar Ticket
+              <Plus className="w-4 h-4" /> Agregar Fila
             </button>
           </div>
 
-          <table className="w-full text-base">
+          <table className="w-full text-base border-collapse">
             <thead className="bg-slate-50 text-slate-400 text-xs font-black uppercase">
               <tr>
-                <th className="px-6 py-4 text-left">Folio del Ticket / Nota</th>
-                <th className="px-6 py-4 text-right w-56">Monto con IVA ($)</th>
-                <th className="px-6 py-4 text-center w-20"></th>
+                <th className="px-4 py-4 text-left w-1/4">Folio (Opcional)</th>
+                <th className="px-4 py-4 text-left w-1/2">Descripción de la Venta / Producto</th>
+                <th className="px-4 py-4 text-right w-1/4">Monto con IVA ($)</th>
+                <th className="px-4 py-4 text-center w-12"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {tickets.map((t, index) => (
-                <tr key={t.id} className="hover:bg-slate-50/50">
-                  <td className="px-6 py-3">
-                    <input
-                      placeholder="Ej. T-1001"
-                      value={t.folio}
-                      onChange={e => updateTicket(t.id, 'folio', e.target.value)}
-                      className="w-full p-2 border-2 border-transparent focus:border-indigo-300 rounded-lg outline-none font-mono font-bold text-indigo-700 placeholder:font-normal"
-                    />
-                  </td>
-                  <td className="px-6 py-3">
-                    <div className="relative">
-                      <span className="absolute left-2 top-2 text-slate-400">$</span>
+              {tickets.map((t, index) => {
+                // Filtramos productos sugeridos si el usuario escribió algo en Descripción
+                const sugerencias = t.showSuggestions && t.descripcion.length > 1
+                  ? productosBD.filter(p =>
+                    p.nombre.toLowerCase().includes(t.descripcion.toLowerCase()) ||
+                    (p.codigoInterno && p.codigoInterno.toLowerCase().includes(t.descripcion.toLowerCase()))
+                  ).slice(0, 5) // Máximo 5 sugerencias
+                  : [];
+
+                return (
+                  <tr key={t.id} className="hover:bg-slate-50/50">
+                    <td className="px-4 py-3 align-top">
                       <input
-                        type="number"
-                        placeholder="0.00"
-                        value={t.total || ''}
-                        onChange={e => updateTicket(t.id, 'total', e.target.value)}
-                        className="w-full p-2 pl-6 text-right border-2 border-transparent focus:border-indigo-300 rounded-lg outline-none font-mono font-bold"
+                        placeholder="T-1001"
+                        value={t.folio}
+                        onChange={e => updateTicket(t.id, 'folio', e.target.value)}
+                        className="w-full p-2 border-2 border-transparent focus:border-indigo-300 rounded-lg outline-none font-mono font-bold text-slate-600 placeholder:font-normal"
                       />
-                    </div>
-                  </td>
-                  <td className="px-6 py-3 text-center">
-                    {tickets.length > 1 && (
-                      <button onClick={() => removeTicket(t.id)} className="text-red-300 hover:text-red-600 p-2 transition-colors">
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-4 py-3 relative align-top">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                        <input
+                          placeholder="Buscar producto o describir venta..."
+                          value={t.descripcion}
+                          onChange={e => updateTicket(t.id, 'descripcion', e.target.value)}
+                          onBlur={() => setTimeout(() => updateTicket(t.id, 'showSuggestions', false), 200)}
+                          className="w-full p-2 pl-9 border-2 border-transparent focus:border-indigo-300 rounded-lg outline-none font-bold text-indigo-800"
+                        />
+                      </div>
+
+                      {/* Dropdown de Sugerencias */}
+                      {sugerencias.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border-2 border-indigo-200 rounded-xl shadow-xl overflow-hidden">
+                          {sugerencias.map(prod => (
+                            <div
+                              key={prod.id}
+                              onMouseDown={(e) => { e.preventDefault(); selectProduct(t.id, prod); }}
+                              className="p-3 hover:bg-indigo-50 cursor-pointer border-b border-indigo-50 last:border-0 flex justify-between items-center"
+                            >
+                              <div>
+                                <div className="font-bold text-indigo-900">{prod.nombre}</div>
+                                {prod.codigoInterno && <div className="text-xs text-indigo-400 font-mono">SKU: {prod.codigoInterno}</div>}
+                              </div>
+                              <div className="text-sm font-bold text-slate-600">
+                                ${(Number(prod.precio) * (1 + Number(prod.ivaTasa))).toFixed(2)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 align-top">
+                      <div className="relative">
+                        <span className="absolute left-2 top-2 text-slate-400">$</span>
+                        <input
+                          type="number"
+                          placeholder="0.00"
+                          value={t.total || ''}
+                          onChange={e => updateTicket(t.id, 'total', e.target.value)}
+                          className="w-full p-2 pl-6 text-right border-2 border-transparent focus:border-indigo-300 rounded-lg outline-none font-mono font-bold"
+                        />
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-center align-top pt-5">
+                      {tickets.length > 1 && (
+                        <button onClick={() => removeTicket(t.id)} className="text-red-300 hover:text-red-600 transition-colors">
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -248,8 +314,8 @@ export default function FacturaGlobalPage() {
           <div className="flex-1 bg-amber-50 p-5 rounded-2xl border border-amber-100 flex gap-3 text-amber-800">
             <Info className="w-6 h-6 shrink-0 mt-1" />
             <div className="text-sm space-y-1">
-              <p><strong>Nota importante:</strong> El sistema usará automáticamente el RFC <strong>XAXX010101000</strong>.</p>
-              <p>Se desglosará el IVA del 16% sobre el monto total de cada ticket ingresado.</p>
+              <p>Puedes dejar el folio vacío y el sistema asignará uno automático.</p>
+              <p>Busca tus productos en la descripción o escribe texto libre. El IVA se desglosará solo.</p>
             </div>
           </div>
 

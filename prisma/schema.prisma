@@ -159,7 +159,7 @@ model Factura {
 // ==========================================
 model ConceptoFactura {
   id              String   @id @default(uuid())
-
+  noIdentificacion  String? // <- Para guardar el folio del ticket
   // Relación con la factura
   facturaId       String
   factura         Factura  @relation(fields: [facturaId], references: [id], onDelete: Cascade)

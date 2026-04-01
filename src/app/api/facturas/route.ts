@@ -39,25 +39,47 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const {
+    let {
       serie, folio, fecha, formaPago, metodoPago, moneda, tipoCambio,
       condicionesPago, notas, clienteId, usoCFDI,
-      retencionIVAPct, retencionISRPct, conceptos, emisorCp
+      retencionIVAPct, retencionISRPct, conceptos, emisorCp,
+      // Nuevos campos para Factura Global
+      esGlobal, periodicidad, mes, anio
     } = body;
+
+    const lugarExpedicionFinal = emisorCp || process.env.EMISOR_CP || '42000';
+
+    // ── MAGIA GLOBAL: Crear o buscar al cliente "PUBLICO EN GENERAL" ──
+    if (esGlobal) {
+      let clienteGlobal = await prisma.client.findFirst({
+        where: { rfc: 'XAXX010101000' }
+      });
+
+      if (!clienteGlobal) {
+        clienteGlobal = await prisma.client.create({
+          data: {
+            rfc: 'XAXX010101000',
+            nombreRazonSocial: 'PUBLICO EN GENERAL',
+            regimenFiscal: '616',
+            cp: lugarExpedicionFinal,
+            usoCfdiDefault: 'S01'
+          }
+        });
+      }
+      clienteId = clienteGlobal.id; // Interceptamos y sobrescribimos el ID
+    }
 
     // Calcular totales según Anexo 20 del SAT
     let subtotal = 0, totalIVA = 0, totalIEPS = 0, totalDescuento = 0;
 
     for (const c of conceptos) {
-      // 1. El Importe es estricto: Cantidad * Precio Unitario
       const importeConcepto = c.cantidad * c.precioUnitario;
-      // 2. La base para impuestos es Importe - Descuento
       const baseImpuesto = importeConcepto - (c.descuento || 0);
 
       const iva = c.objetoImpuesto !== '01' ? baseImpuesto * c.ivaTasa : 0;
       const ieps = c.objetoImpuesto !== '01' ? baseImpuesto * c.iepsTasa : 0;
 
-      subtotal += importeConcepto; // Subtotal es suma de importes brutos
+      subtotal += importeConcepto;
       totalIVA += iva;
       totalIEPS += ieps;
       totalDescuento += c.descuento || 0;
@@ -71,15 +93,12 @@ export async function POST(req: NextRequest) {
     const client = await prisma.client.findUnique({ where: { id: clienteId } });
     if (!client) return NextResponse.json({ error: 'Cliente no encontrado' }, { status: 404 });
 
-    // CP del Emisor (tu empresa) como lugar de expedición
-    const lugarExpedicionFinal = emisorCp || process.env.EMISOR_CP || '00000'; // Asegúrate de tener EMISOR_CP en tu .env
-
     const factura = await prisma.factura.create({
       data: {
         serie,
         folio,
         fecha: new Date(fecha),
-        lugarExpedicion: lugarExpedicionFinal, // CORREGIDO: CP del Emisor
+        lugarExpedicion: lugarExpedicionFinal,
         formaPago,
         metodoPago,
         moneda,
@@ -96,23 +115,31 @@ export async function POST(req: NextRequest) {
         retencionISR,
         total,
         estado: 'BORRADOR',
+
+        // Asignación de datos Globales SAT
+        esGlobal: esGlobal || false,
+        periodicidad: periodicidad || null,
+        mes: mes || null,
+        anio: anio ? Number(anio) : null,
+
         conceptos: {
           create: conceptos.map((c: any) => {
-            const importe = c.cantidad * c.precioUnitario; // CORREGIDO
+            const importe = c.cantidad * c.precioUnitario;
             const baseImp = importe - (c.descuento || 0);
             const ivaImporte = c.objetoImpuesto !== '01' ? baseImp * c.ivaTasa : 0;
             const iepsImporte = c.objetoImpuesto !== '01' ? baseImp * c.iepsTasa : 0;
 
             return {
-              productId: c.productoId || null,
+              productId: c.productId || null,
               claveProdServ: c.claveProdServ,
+              noIdentificacion: c.noIdentificacion || null, // Se guarda el folio del ticket
               claveUnidad: c.claveUnidad,
               unidad: c.unidad,
               descripcion: c.descripcion,
               cantidad: c.cantidad,
               precioUnitario: c.precioUnitario,
               descuento: c.descuento || 0,
-              importe, // Bruto
+              importe,
               objetoImpuesto: c.objetoImpuesto,
               ivaTasa: c.ivaTasa,
               iepsTasa: c.iepsTasa || 0,
