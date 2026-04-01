@@ -68,7 +68,6 @@ export function generarXMLUnsigned(datos: DatosFactura, noCertificado: string, c
       ...(datos.condicionesPago && { CondicionesDePago: datos.condicionesPago.trim() }),
     });
 
-  // Nodo de Información Global
   if (datos.esGlobal && datos.periodicidad && datos.mes && datos.anio) {
     root.ele('cfdi:InformacionGlobal', {
       Periodicidad: datos.periodicidad.trim(),
@@ -132,7 +131,7 @@ export async function buildCadenaOriginal(xmlString: string): Promise<string> {
   const parser = new XmlParser();
 
   const xmlSafe = xmlString.replace(/Año="/g, 'Anio="');
-  const xsltSafe = xsltContent.replace(/@Año/g, '@Anio');
+  const xsltSafe = xsltContent.replace(/@A&#241;o/g, '@Anio').replace(/@Año/g, '@Anio');
 
   const xmlDoc = parser.xmlParse(xmlSafe);
   const xsltDoc = parser.xmlParse(xsltSafe);
@@ -141,26 +140,50 @@ export async function buildCadenaOriginal(xmlString: string): Promise<string> {
   let cadena = result.toString();
   cadena = cadena.replace(/[\r\n\t]/g, '').trim();
 
+  // 🛡️ PARCHE INFALIBLE PARA FACTURA GLOBAL
   if (xmlString.includes('cfdi:InformacionGlobal')) {
     const matchPer = xmlString.match(/Periodicidad="([^"]+)"/);
     const matchMes = xmlString.match(/Meses="([^"]+)"/);
     const matchAnio = xmlString.match(/Año="([^"]+)"/);
+    const matchLugar = xmlString.match(/LugarExpedicion="([^"]+)"/);
+    const matchRfc = xmlString.match(/cfdi:Emisor[^>]*Rfc="([^"]+)"/);
 
-    if (matchPer && matchMes && matchAnio) {
-      const seqCorrecta = `|${matchPer[1]}|${matchMes[1]}|${matchAnio[1]}|`;
-      const matchRfc = xmlString.match(/cfdi:Emisor[^>]*Rfc="([^"]+)"/);
+    if (matchPer && matchMes && matchAnio && matchLugar && matchRfc) {
+      const per = matchPer[1];
+      const mes = matchMes[1];
+      const anio = matchAnio[1];
+      const lugar = matchLugar[1];
+      const rfc = matchRfc[1];
 
-      if (matchRfc && !cadena.includes(seqCorrecta)) {
-        const seqMala1 = `|${matchPer[1]}|${matchMes[1]}||`;
-        const seqMala2 = `|${matchPer[1]}|${matchMes[1]}|${matchRfc[1]}|`;
-        if (cadena.includes(seqMala1)) cadena = cadena.replace(seqMala1, seqCorrecta);
-        else if (cadena.includes(seqMala2)) cadena = cadena.replace(seqMala2, `|${matchPer[1]}|${matchMes[1]}|${matchAnio[1]}|${matchRfc[1]}|`);
+      const seqCorrecta = `|${per}|${mes}|${anio}|`;
+
+      // Si la cadena no tiene la información global...
+      if (!cadena.includes(seqCorrecta)) {
+        // Buscamos exactamente donde el XSLT unió el CP (LugarExpedicion) con el RFC
+        const seqOmitida = `|${lugar}|${rfc}|`;
+
+        if (cadena.includes(seqOmitida)) {
+          // Inyectamos la información global justo en medio (CP -> Global -> RFC)
+          cadena = cadena.replace(seqOmitida, `|${lugar}|${per}|${mes}|${anio}|${rfc}|`);
+        } else {
+          // Fallbacks adicionales por si acaso
+          const seqMala1 = `|${per}|${mes}||`;
+          const seqMala2 = `|${per}|${mes}|${rfc}|`;
+
+          if (cadena.includes(seqMala1)) {
+            cadena = cadena.replace(seqMala1, seqCorrecta);
+          } else if (cadena.includes(seqMala2)) {
+            cadena = cadena.replace(seqMala2, `|${per}|${mes}|${anio}|${rfc}|`);
+          }
+        }
       }
     }
   }
 
+  // Asegurar los pipes de inicio y fin requeridos por el estándar
   if (!cadena.startsWith('||')) cadena = '||' + cadena.replace(/^\|+/, '');
   cadena = cadena.replace(/\|+$/, '') + '||';
+
   return cadena;
 }
 
@@ -181,7 +204,7 @@ export async function timbrarFactura(datos: DatosFactura): Promise<{ uuid: strin
   const sello = generarSello(cadenaOriginal, keyPem);
   const xmlFirmado = xmlSinSello.replace('Sello=""', `Sello="${sello}"`);
 
-  // 🔴 MODO DEBUG: IMPRIMIENDO DATOS EN LA TERMINAL 🔴
+  {/*
   console.log("\n==========================================");
   console.log("🔍 MODO INSPECTOR: DATOS ANTES DE FINKOK");
   console.log("==========================================");
@@ -189,7 +212,7 @@ export async function timbrarFactura(datos: DatosFactura): Promise<{ uuid: strin
   console.log("------------------------------------------");
   console.log("📄 XML QUE SE ENVIARÁ AL SAT:\n", xmlFirmado);
   console.log("==========================================\n");
-
+  */}
   const wsdl = ambiente === 'demo' ? WSDL_DEMO : WSDL_PROD;
   const client = await soap.createClientAsync(wsdl);
   const xmlBase64 = Buffer.from(xmlFirmado, 'utf-8').toString('base64');
