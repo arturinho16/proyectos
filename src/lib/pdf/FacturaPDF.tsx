@@ -4,6 +4,12 @@ import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/render
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
 
+// Función VITAL para React-PDF: Corta strings largos (como Base64) para que no se salgan de la hoja
+const chunkString = (str?: string) => {
+  if (!str) return '';
+  return str.match(/.{1,70}/g)?.join('\u200B') || str; // \u200B es un espacio de ancho cero
+};
+
 // ─── Estilos ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   page: { fontSize: 10, padding: 36, fontFamily: 'Helvetica', color: '#1a1a1a', backgroundColor: '#ffffff' },
@@ -46,15 +52,12 @@ const styles = StyleSheet.create({
   monedaLabel: { fontSize: 7, color: '#6b7280', width: 60 },
   monedaValue: { fontSize: 7, color: '#6b7280' },
 
-  // 🔴 CORRECCIÓN: Ajuste de los estilos de la sección del QR para que quepan las cadenas
   sellosContainer: { flexDirection: 'row', marginTop: 12, borderTopWidth: 1, borderTopColor: '#1a1a1a', paddingTop: 8 },
-  qrBox: { width: 100, alignItems: 'center', justifyContent: 'flex-start' },
-  qrImage: { width: 90, height: 90 },
+  qrBox: { width: 90, alignItems: 'center', justifyContent: 'flex-start' },
+  qrImage: { width: 85, height: 85 },
   sellosInfoBox: { flex: 1, paddingLeft: 10 },
-  sellosTitle: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#374151', marginBottom: 4 },
-  // Se añade flexWrap a los textos largos para que el PDF no los trunque
-  sellosText: { fontSize: 5.5, color: '#4b5563', marginBottom: 4, width: '100%' },
-
+  sellosTitle: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#374151', marginBottom: 2 },
+  sellosText: { fontSize: 5.5, color: '#4b5563', marginBottom: 6, lineHeight: 1.3 },
   footer: { marginTop: 10, fontSize: 7.5, color: '#9ca3af', textAlign: 'center', borderTopWidth: 0.5, borderTopColor: '#e5e7eb', paddingTop: 6 },
 });
 
@@ -155,38 +158,36 @@ export const FacturaPDF: React.FC<FacturaPDFProps> = ({ factura, logoUrl }) => {
           </View>
         </View>
 
-        {/* ── SELLOS Y QR EN DOS COLUMNAS ── */}
+        {/* ── SELLOS Y QR ── */}
         {!esBorrador && factura.uuid && (
           <View style={styles.sellosContainer}>
-            {/* Columna Izquierda: QR */}
             <View style={styles.qrBox}>
               {factura.qrCodeUrl && <Image src={factura.qrCodeUrl} style={styles.qrImage} />}
             </View>
 
-            {/* Columna Derecha: Sellos y Cadenas */}
             <View style={styles.sellosInfoBox}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                {factura.fechaTimbrado && <View><Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold', fontSize: 6 }]}>Fecha/Hora de Certificación:</Text><Text style={styles.sellosText}>{factura.fechaTimbrado}</Text></View>}
-                {factura.noCertificadoSat && <View><Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold', fontSize: 6 }]}>No. Certificado SAT:</Text><Text style={styles.sellosText}>{factura.noCertificadoSat}</Text></View>}
-                {factura.rfcPac && <View><Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold', fontSize: 6 }]}>RFC del PAC:</Text><Text style={styles.sellosText}>{factura.rfcPac}</Text></View>}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                {factura.fechaTimbrado && <View><Text style={styles.sellosTitle}>Fecha / Hora de Certificación:</Text><Text style={styles.sellosText}>{factura.fechaTimbrado}</Text></View>}
+                {factura.noCertificadoSat && <View><Text style={styles.sellosTitle}>Número de Serie Certificado del SAT:</Text><Text style={styles.sellosText}>{factura.noCertificadoSat}</Text></View>}
+                {factura.rfcPac && <View><Text style={styles.sellosTitle}>RFC del PAC:</Text><Text style={styles.sellosText}>{factura.rfcPac}</Text></View>}
               </View>
 
               {factura.cadenaOriginal && (
                 <>
-                  <Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold' }]}>Cadena Original del complemento de Certificación Digital del SAT:</Text>
-                  <Text style={styles.sellosText}>{factura.cadenaOriginal}</Text>
+                  <Text style={styles.sellosTitle}>Cadena Original del complemento de Certificación Digital del SAT:</Text>
+                  <Text style={styles.sellosText}>{chunkString(factura.cadenaOriginal)}</Text>
                 </>
               )}
               {factura.selloCfdi && (
                 <>
-                  <Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold' }]}>Sello Digital CFDI:</Text>
-                  <Text style={styles.sellosText}>{factura.selloCfdi}</Text>
+                  <Text style={styles.sellosTitle}>Sello Digital del CFDI:</Text>
+                  <Text style={styles.sellosText}>{chunkString(factura.selloCfdi)}</Text>
                 </>
               )}
               {factura.selloSat && (
                 <>
-                  <Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold' }]}>Sello Digital SAT:</Text>
-                  <Text style={styles.sellosText}>{factura.selloSat}</Text>
+                  <Text style={styles.sellosTitle}>Sello Digital del SAT:</Text>
+                  <Text style={styles.sellosText}>{chunkString(factura.selloSat)}</Text>
                 </>
               )}
             </View>

@@ -12,16 +12,52 @@ import { saveAs } from 'file-saver';
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 type Concepto = { descripcion: string; cantidad: number; importe: number; claveProdServ?: string; claveUnidad?: string; precioUnitario?: number; };
 type Factura = {
-  id: string; serie: string; folio: string; fecha: string; formaPago: string; metodoPago: string; moneda: string; subtotal: number; totalIVA: number; total: number; estado: string; uuid?: string; notas?: string; esGlobal?: boolean;
+  id: string; serie: string; folio: string; fecha: string; formaPago: string; metodoPago: string; moneda: string; subtotal: number; totalIVA: number; total: number; estado: string; uuid?: string; notas?: string; esGlobal?: boolean; xmlTimbrado?: string;
   client: { nombreRazonSocial: string; rfc: string; email?: string; cp?: string; regimenFiscal?: string; calle?: string; numExterior?: string; numInterior?: string; colonia?: string; municipio?: string; estado?: string; usoCfdiDefault?: string; };
   conceptos: Concepto[];
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers & Catálogos ──────────────────────────────────────────────────────
 const ESTADO_BADGE: Record<string, string> = { BORRADOR: 'bg-amber-100 text-amber-700 border border-amber-200', TIMBRADO: 'bg-green-100 text-green-700 border border-green-200', CANCELADO: 'bg-red-100 text-red-600 border border-red-200', };
 const fmt = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
 const fmtFecha = (d: string) => new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 const EMISOR = { nombre: 'OMAR ARTURO CORONA MONROY', rfc: 'COMO891216CM1', direccion: 'Francisco Clavijero 106 Int. 2, Centro', cp: '42000 HIDALGO', regimenFiscal: '626 - Régimen Simplificado de Confianza', };
+
+const CATALOGO_FORMA_PAGO: Record<string, string> = { '01': '01 - Efectivo', '02': '02 - Cheque nominativo', '03': '03 - Transferencia electrónica de fondos', '04': '04 - Tarjeta de crédito', '05': '05 - Monedero electrónico', '06': '06 - Dinero electrónico', '08': '08 - Vales de despensa', '12': '12 - Dación en pago', '13': '13 - Pago por subrogación', '14': '14 - Pago por consignación', '15': '15 - Condonación', '17': '17 - Compensación', '23': '23 - Novación', '24': '24 - Confusión', '25': '25 - Remisión de deuda', '26': '26 - Prescripción o caducidad', '27': '27 - A satisfacción del acreedor', '28': '28 - Tarjeta de débito', '29': '29 - Tarjeta de servicios', '30': '30 - Aplicación de anticipos', '31': '31 - Intermediarios', '99': '99 - Por definir' };
+const CATALOGO_METODO_PAGO: Record<string, string> = { 'PUE': 'PUE - Pago en una sola exhibición', 'PPD': 'PPD - Pago en parcialidades o diferido' };
+
+const extractCfdiData = (xml?: string) => {
+  if (!xml) return {};
+  try {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xml, "text/xml");
+    const timbre = xmlDoc.getElementsByTagName("tfd:TimbreFiscalDigital")[0];
+    const comprobante = xmlDoc.getElementsByTagName("cfdi:Comprobante")[0];
+
+    if (!timbre || !comprobante) return {};
+
+    const selloCfdi = timbre.getAttribute("SelloCFD");
+    const selloSat = timbre.getAttribute("SelloSAT");
+    const noCertificadoSat = timbre.getAttribute("NoCertificadoSAT");
+    const fechaTimbrado = timbre.getAttribute("FechaTimbrado");
+    const rfcPac = timbre.getAttribute("RfcProvCertif");
+    const uuid = timbre.getAttribute("UUID");
+    const noCertificado = comprobante.getAttribute("NoCertificado");
+
+    const cadenaOriginal = `||1.1|${uuid}|${fechaTimbrado}|${rfcPac}|${selloCfdi}|${noCertificadoSat}||`;
+
+    const emisorRfc = xmlDoc.getElementsByTagName("cfdi:Emisor")[0]?.getAttribute("Rfc") || "";
+    const receptorRfc = xmlDoc.getElementsByTagName("cfdi:Receptor")[0]?.getAttribute("Rfc") || "";
+    const total = comprobante.getAttribute("Total") || "";
+    const last8Sello = selloCfdi ? selloCfdi.slice(-8) : "";
+
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=` + encodeURIComponent(`https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${uuid}&re=${emisorRfc}&rr=${receptorRfc}&tt=${total}&fe=${last8Sello}`);
+
+    return { selloCfdi, selloSat, noCertificadoSat, noCertificado, fechaTimbrado, rfcPac, cadenaOriginal, qrCodeUrl: qrUrl };
+  } catch (e) {
+    return {};
+  }
+};
 
 // ─── Modal de Correo ──────────────────────────────────────────────────────────
 function ModalCorreo({ factura, onClose, onEnviar, enviando, mensaje }: { factura: Factura; onClose: () => void; onEnviar: (correo: string) => void; enviando: boolean; mensaje: string; }) {
@@ -124,7 +160,17 @@ export default function FacturasPage() {
       for (const id of seleccionadas) {
         const f = facturas.find(x => x.id === id);
         if (!f) continue;
-        const facturaData = { folio: f.folio, serie: f.serie, fecha: fmtFecha(f.fecha), estado: f.estado, uuid: f.uuid, emisor: EMISOR, receptor: { nombre: f.client.nombreRazonSocial, rfc: f.client.rfc, cp: f.client.cp, regimenFiscal: f.client.regimenFiscal }, conceptos: f.conceptos.map(c => ({ claveProdServ: c.claveProdServ, cantidad: c.cantidad, descripcion: c.descripcion, valorUnitario: c.precioUnitario, importe: c.importe })), subtotal: f.subtotal, iva: f.totalIVA, total: f.total, moneda: f.moneda, formaPago: f.formaPago, metodoPago: f.metodoPago };
+
+        const cfdiExtra = f.xmlTimbrado ? extractCfdiData(f.xmlTimbrado) : {};
+        const facturaData = {
+          folio: f.folio, serie: f.serie, fecha: fmtFecha(f.fecha), estado: f.estado, uuid: f.uuid, emisor: EMISOR,
+          receptor: { nombre: f.client.nombreRazonSocial, rfc: f.client.rfc, cp: f.client.cp, regimenFiscal: f.client.regimenFiscal },
+          conceptos: f.conceptos.map(c => ({ claveProdServ: c.claveProdServ, cantidad: c.cantidad, descripcion: c.descripcion, valorUnitario: c.precioUnitario, importe: c.importe })),
+          subtotal: f.subtotal, iva: f.totalIVA, total: f.total, moneda: f.moneda,
+          formaPago: CATALOGO_FORMA_PAGO[f.formaPago] || f.formaPago,
+          metodoPago: CATALOGO_METODO_PAGO[f.metodoPago] || f.metodoPago,
+          ...cfdiExtra
+        };
         const blob = await pdf(React.createElement(FacturaPDF, { factura: facturaData as any, logoUrl: '/logo-tufisti.png' })).toBlob();
         folderPDFs?.file(`${f.serie}-${f.folio}_${f.client.rfc}.pdf`, blob);
       }
@@ -143,7 +189,18 @@ export default function FacturasPage() {
     e.stopPropagation(); setDescargando(f.id);
     try {
       const { pdf } = await import('@react-pdf/renderer'); const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF'); const React = (await import('react')).default;
-      const facturaData = { folio: f.folio, serie: f.serie, fecha: fmtFecha(f.fecha), estado: f.estado, uuid: f.uuid, emisor: EMISOR, receptor: { nombre: f.client.nombreRazonSocial, rfc: f.client.rfc, cp: f.client.cp, regimenFiscal: f.client.regimenFiscal }, conceptos: f.conceptos.map(c => ({ claveProdServ: c.claveProdServ, cantidad: c.cantidad, descripcion: c.descripcion, valorUnitario: c.precioUnitario, importe: c.importe })), subtotal: f.subtotal, iva: f.totalIVA, total: f.total, moneda: f.moneda, formaPago: f.formaPago, metodoPago: f.metodoPago };
+
+      const cfdiExtra = f.xmlTimbrado ? extractCfdiData(f.xmlTimbrado) : {};
+      const facturaData = {
+        folio: f.folio, serie: f.serie, fecha: fmtFecha(f.fecha), estado: f.estado, uuid: f.uuid, emisor: EMISOR,
+        receptor: { nombre: f.client.nombreRazonSocial, rfc: f.client.rfc, cp: f.client.cp, regimenFiscal: f.client.regimenFiscal },
+        conceptos: f.conceptos.map(c => ({ claveProdServ: c.claveProdServ, cantidad: c.cantidad, descripcion: c.descripcion, valorUnitario: c.precioUnitario, importe: c.importe })),
+        subtotal: f.subtotal, iva: f.totalIVA, total: f.total, moneda: f.moneda,
+        formaPago: CATALOGO_FORMA_PAGO[f.formaPago] || f.formaPago,
+        metodoPago: CATALOGO_METODO_PAGO[f.metodoPago] || f.metodoPago,
+        ...cfdiExtra
+      };
+
       const blob = await pdf(React.createElement(FacturaPDF, { factura: facturaData as any, logoUrl: '/logo-tufisti.png' })).toBlob();
       const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Factura-${f.serie}${f.folio}.pdf`; a.click();
     } finally { setDescargando(null); }
@@ -175,7 +232,19 @@ export default function FacturasPage() {
     setEnviandoCorreo(true); setMsgCorreo('');
     try {
       const { pdf } = await import('@react-pdf/renderer'); const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF'); const React = (await import('react')).default;
-      const facturaData = { folio: facturaCorreo.folio, serie: facturaCorreo.serie, fecha: fmtFecha(facturaCorreo.fecha), estado: facturaCorreo.estado, uuid: facturaCorreo.uuid, emisor: EMISOR, receptor: { nombre: facturaCorreo.client.nombreRazonSocial, rfc: facturaCorreo.client.rfc, cp: facturaCorreo.client.cp, regimenFiscal: facturaCorreo.client.regimenFiscal }, conceptos: facturaCorreo.conceptos.map(c => ({ claveProdServ: c.claveProdServ, cantidad: c.cantidad, descripcion: c.descripcion, valorUnitario: c.precioUnitario, importe: c.importe })), subtotal: facturaCorreo.subtotal, iva: facturaCorreo.totalIVA, total: facturaCorreo.total, moneda: facturaCorreo.moneda, formaPago: facturaCorreo.formaPago, metodoPago: facturaCorreo.metodoPago };
+
+      const f = facturaCorreo;
+      const cfdiExtra = f.xmlTimbrado ? extractCfdiData(f.xmlTimbrado) : {};
+      const facturaData = {
+        folio: f.folio, serie: f.serie, fecha: fmtFecha(f.fecha), estado: f.estado, uuid: f.uuid, emisor: EMISOR,
+        receptor: { nombre: f.client.nombreRazonSocial, rfc: f.client.rfc, cp: f.client.cp, regimenFiscal: f.client.regimenFiscal },
+        conceptos: f.conceptos.map(c => ({ claveProdServ: c.claveProdServ, cantidad: c.cantidad, descripcion: c.descripcion, valorUnitario: c.precioUnitario, importe: c.importe })),
+        subtotal: f.subtotal, iva: f.totalIVA, total: f.total, moneda: f.moneda,
+        formaPago: CATALOGO_FORMA_PAGO[f.formaPago] || f.formaPago,
+        metodoPago: CATALOGO_METODO_PAGO[f.metodoPago] || f.metodoPago,
+        ...cfdiExtra
+      };
+
       const blob = await pdf(React.createElement(FacturaPDF, { factura: facturaData as any, logoUrl: '/logo-tufisti.png' })).toBlob();
       const reader = new FileReader(); reader.readAsDataURL(blob);
       reader.onloadend = async () => {
@@ -265,7 +334,6 @@ export default function FacturasPage() {
                         <td className="px-6 py-4 font-mono font-bold">{fmt(f.total)}</td>
                         <td className="px-6 py-4"><span className={`px-3 py-1 rounded-lg text-sm font-bold ${ESTADO_BADGE[f.estado]}`}>{f.estado}</span></td>
 
-                        {/* ── BOTONES DE ACCIÓN RESTAURADOS ── */}
                         <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
                             <button title="Ver detalle" onClick={() => setExpandida(expandida === f.id ? null : f.id)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Eye className="w-5 h-5" /></button>

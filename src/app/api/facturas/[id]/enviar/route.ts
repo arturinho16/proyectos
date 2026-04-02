@@ -10,7 +10,8 @@ const transporter = nodemailer.createTransport({
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const { destinatario, pdfBase64, xmlContenido } = await req.json();
+    // Ya no extraemos xmlContenido del body
+    const { destinatario, pdfBase64 } = await req.json();
 
     const factura = await prisma.factura.findUnique({ where: { id }, include: { client: true } });
     if (!factura) return NextResponse.json({ error: 'Factura no encontrada' }, { status: 404 });
@@ -20,15 +21,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const nombreArchivo = `Factura-${factura.serie ?? ''}${factura.folio}`;
 
-    // 🔴 FORZAMOS EL ARREGLO DE ADJUNTOS AQUÍ
     const adjuntos = [];
     if (pdfBase64) adjuntos.push({ filename: `${nombreArchivo}.pdf`, content: pdfBase64, encoding: 'base64' });
 
-    // Si viene el string del XML, lo convertimos en buffer y lo mandamos
-    if (xmlContenido) {
+    // Extraemos el XML directamente de la base de datos sin alterar su codificación
+    if (factura.xmlTimbrado) {
       adjuntos.push({
         filename: `${nombreArchivo}.xml`,
-        content: Buffer.from(xmlContenido, 'utf-8'),
+        content: factura.xmlTimbrado, // Pasa el texto directo
         contentType: 'application/xml',
       });
     }
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           </div>
           <div style="padding: 24px; background: #f9fafb;">
             <p>Estimado(a) <strong>${factura.client?.nombreRazonSocial}</strong>,</p>
-            <p>Adjunto encontrará su factura en formato PDF y XML.</p>
+            <p>Adjunto encontrará su factura en formato PDF y XML correspondiente a su comprobante fiscal.</p>
           </div>
         </div>
       `,

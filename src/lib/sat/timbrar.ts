@@ -228,5 +228,19 @@ export async function timbrarFactura(datos: DatosFactura): Promise<{ uuid: strin
     throw new Error(`Error FINKOK: ${incidencia?.MensajeIncidencia || stampResult.CodEstatus || 'Error desconocido'}`);
   }
 
-  return { uuid: stampResult.UUID, xmlTimbrado: Buffer.from(stampResult.xml, 'base64').toString('utf-8'), noCertificadoSAT: stampResult.NoCertificadoSAT };
+  // 👇 NUEVO CÓDIGO A PARTIR DE AQUÍ 👇
+  let xmlFinal = stampResult.xml;
+
+  // Verificamos si el XML ya es texto legible o si viene encriptado en base64
+  if (typeof xmlFinal === 'string' && !xmlFinal.startsWith('<?xml') && !xmlFinal.startsWith('<cfdi')) {
+    xmlFinal = Buffer.from(xmlFinal, 'base64').toString('utf-8');
+  } else if (Buffer.isBuffer(xmlFinal)) {
+    xmlFinal = xmlFinal.toString('utf-8');
+  }
+
+  return {
+    uuid: stampResult.UUID,
+    xmlTimbrado: xmlFinal, // <- Ahora se guarda intacto
+    noCertificadoSAT: stampResult.NoCertificadoSAT
+  };
 }
