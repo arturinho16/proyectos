@@ -46,13 +46,14 @@ const styles = StyleSheet.create({
   monedaLabel: { fontSize: 7, color: '#6b7280', width: 60 },
   monedaValue: { fontSize: 7, color: '#6b7280' },
 
-  // ── Modificaciones para el Contenedor de Sellos y QR ──
+  // 🔴 CORRECCIÓN: Ajuste de los estilos de la sección del QR para que quepan las cadenas
   sellosContainer: { flexDirection: 'row', marginTop: 12, borderTopWidth: 1, borderTopColor: '#1a1a1a', paddingTop: 8 },
   qrBox: { width: 100, alignItems: 'center', justifyContent: 'flex-start' },
   qrImage: { width: 90, height: 90 },
   sellosInfoBox: { flex: 1, paddingLeft: 10 },
   sellosTitle: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#374151', marginBottom: 4 },
-  sellosText: { fontSize: 5, color: '#6b7280', marginBottom: 4, wordBreak: 'break-all' },
+  // Se añade flexWrap a los textos largos para que el PDF no los trunque
+  sellosText: { fontSize: 5.5, color: '#4b5563', marginBottom: 4, width: '100%' },
 
   footer: { marginTop: 10, fontSize: 7.5, color: '#9ca3af', textAlign: 'center', borderTopWidth: 0.5, borderTopColor: '#e5e7eb', paddingTop: 6 },
 });
@@ -62,7 +63,6 @@ interface Concepto { claveProdServ: string; cantidad: number; claveUnidad: strin
 interface FacturaPDFProps {
   factura: {
     folio: string; serie?: string; fecha: string; estado: string; uuid?: string;
-    // Agregados los campos del timbre
     qrCodeUrl?: string; cadenaOriginal?: string; selloCfdi?: string; selloSat?: string; noCertificado?: string; noCertificadoSat?: string; fechaTimbrado?: string; rfcPac?: string;
     emisor: { nombre: string; rfc: string; direccion?: string; cp?: string; regimenFiscal?: string; telefono?: string; };
     receptor: { nombre: string; rfc: string; direccion?: string; cp?: string; usoCfdi?: string; regimenFiscal?: string; };
@@ -144,7 +144,7 @@ export const FacturaPDF: React.FC<FacturaPDFProps> = ({ factura, logoUrl }) => {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 6 }}>
           <View style={{ flex: 1 }}>
             <View style={styles.monedaRow}><Text style={styles.monedaLabel}>Moneda:</Text><Text style={styles.monedaValue}>{factura.moneda ?? 'MXN - Peso Mexicano'}</Text></View>
-            {factura.totalLetra && <View style={styles.letraRow}><Text style={styles.letraLabel}></Text><Text style={styles.letraValue}>{factura.totalLetra}</Text></View>}
+            {factura.totalLetra && <View style={styles.letraRow}><Text style={styles.letraLabel}>Monto con letra:</Text><Text style={styles.letraValue}>{factura.totalLetra}</Text></View>}
             {factura.formaPago && <View style={styles.monedaRow}><Text style={styles.monedaLabel}>Forma Pago:</Text><Text style={styles.monedaValue}>{factura.formaPago}</Text></View>}
             {factura.metodoPago && <View style={styles.monedaRow}><Text style={styles.monedaLabel}>Método Pago:</Text><Text style={styles.monedaValue}>{factura.metodoPago}</Text></View>}
           </View>
@@ -155,7 +155,7 @@ export const FacturaPDF: React.FC<FacturaPDFProps> = ({ factura, logoUrl }) => {
           </View>
         </View>
 
-        {/* ── SELLOS Y QR EN DOS COLUMNAS (Solo Timbrada) ── */}
+        {/* ── SELLOS Y QR EN DOS COLUMNAS ── */}
         {!esBorrador && factura.uuid && (
           <View style={styles.sellosContainer}>
             {/* Columna Izquierda: QR */}
@@ -166,9 +166,9 @@ export const FacturaPDF: React.FC<FacturaPDFProps> = ({ factura, logoUrl }) => {
             {/* Columna Derecha: Sellos y Cadenas */}
             <View style={styles.sellosInfoBox}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                {factura.fechaTimbrado && <View><Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold', fontSize: 6 }]}>Fecha timbrado:</Text><Text style={styles.sellosText}>{factura.fechaTimbrado}</Text></View>}
+                {factura.fechaTimbrado && <View><Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold', fontSize: 6 }]}>Fecha/Hora de Certificación:</Text><Text style={styles.sellosText}>{factura.fechaTimbrado}</Text></View>}
                 {factura.noCertificadoSat && <View><Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold', fontSize: 6 }]}>No. Certificado SAT:</Text><Text style={styles.sellosText}>{factura.noCertificadoSat}</Text></View>}
-                {factura.rfcPac && <View><Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold', fontSize: 6 }]}>RFC PAC:</Text><Text style={styles.sellosText}>{factura.rfcPac}</Text></View>}
+                {factura.rfcPac && <View><Text style={[styles.sellosText, { fontFamily: 'Helvetica-Bold', fontSize: 6 }]}>RFC del PAC:</Text><Text style={styles.sellosText}>{factura.rfcPac}</Text></View>}
               </View>
 
               {factura.cadenaOriginal && (
