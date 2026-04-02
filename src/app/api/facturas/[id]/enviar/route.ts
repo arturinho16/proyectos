@@ -16,7 +16,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params;  // ← await obligatorio
-    const { destinatario, pdfBase64 } = await req.json();
+
+    // 🔴 1. Extraemos también el xmlContenido que ahora manda el modal
+    const { destinatario, pdfBase64, xmlContenido } = await req.json();
 
     // Obtener datos de la factura
     const factura = await prisma.factura.findUnique({
@@ -33,8 +35,27 @@ export async function POST(
       return NextResponse.json({ error: 'No hay correo destino' }, { status: 400 });
     }
 
+    // 🔴 2. Preparamos el arreglo de archivos adjuntos
+    const adjuntos = [];
+
+    if (pdfBase64) {
+      adjuntos.push({
+        filename: `Factura-${factura.serie ?? ''}${factura.folio}.pdf`,
+        content: pdfBase64,
+        encoding: 'base64',
+      });
+    }
+
+    if (xmlContenido) {
+      adjuntos.push({
+        filename: `Factura-${factura.serie ?? ''}${factura.folio}.xml`,
+        content: xmlContenido,
+        contentType: 'application/xml',
+      });
+    }
+
     await transporter.sendMail({
-     //cambio del remitente en el correo
+      //cambio del remitente en el correo
       from: `"TuFisTi Facturación" <${process.env.GMAIL_USER}>`,
       to: emailDestino,
       subject: `Factura ${factura.serie ?? ''}${factura.folio} - ${factura.client?.nombreRazonSocial}`,
@@ -79,13 +100,8 @@ export async function POST(
           </div>
         </div>
       `,
-      attachments: pdfBase64
-        ? [{
-          filename: `Factura-${factura.serie ?? ''}${factura.folio}.pdf`,
-          content: pdfBase64,
-          encoding: 'base64',
-        }]
-        : [],
+      // 🔴 3. Pasamos el arreglo con ambos archivos
+      attachments: adjuntos,
     });
 
     return NextResponse.json({ ok: true, mensaje: `Correo enviado a ${emailDestino}` });

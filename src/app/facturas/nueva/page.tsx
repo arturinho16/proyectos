@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { FileText, PlusCircle, Trash2, Search, X, Mail, Download, Loader2, ArrowLeft, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import QRCode from 'qrcode'; // 🔴 IMPORTACIÓN DIRECTA DE LA LIBRERÍA QR
 import { REGIMENES_FISCALES, USOS_CFDI } from '@/lib/sat/catalogos';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -42,13 +43,26 @@ const getCDMXInfo = () => {
   return { serieStr: `FAC-${day}${month}${year}-${hours}:${minutes}`, fechaStr: `${year}-${month}-${day}T${hours}:${minutes}` };
 };
 
-// ─── Lógica para extraer datos del XML ─────────────────────────────────────────
+// 🔴 CORRECCIÓN: Extracción robusta (ignora mayúsculas/minúsculas)
 const extraerDatosXML = (xml: string) => {
-  if (!xml) return {};
-  const getAttr = (name: string) => { const match = xml.match(new RegExp(`${name}="([^"]+)"`)); return match ? match[1] : ''; };
-  const uuid = getAttr('UUID'); const fechaTimbrado = getAttr('FechaTimbrado'); const rfcPac = getAttr('RfcProvCertif');
-  const selloCfdi = getAttr('SelloCFD'); const selloSat = getAttr('SelloSAT'); const noCertificadoSat = getAttr('NoCertificadoSAT'); const noCertificado = getAttr('NoCertificado');
-  const cadenaOriginal = `||1.1|${uuid}|${fechaTimbrado}|${rfcPac}|${selloCfdi}|${noCertificadoSat}||`;
+  if (!xml || typeof xml !== 'string') return {};
+  const getAttr = (name: string) => {
+    const match = xml.match(new RegExp(`${name}=["']([^"']+)["']`, 'i'));
+    return match ? match[1] : '';
+  };
+
+  const uuid = getAttr('UUID');
+  const fechaTimbrado = getAttr('FechaTimbrado');
+  const rfcPac = getAttr('RfcProvCertif');
+  const selloCfdi = getAttr('SelloCFD') || getAttr('Sello');
+  const selloSat = getAttr('SelloSAT');
+  const noCertificadoSat = getAttr('NoCertificadoSAT');
+  const noCertificado = getAttr('NoCertificado');
+
+  const cadenaOriginal = (uuid && fechaTimbrado && rfcPac && selloCfdi && noCertificadoSat)
+    ? `||1.1|${uuid}|${fechaTimbrado}|${rfcPac}|${selloCfdi}|${noCertificadoSat}||`
+    : '';
+
   return { uuid, fechaTimbrado, rfcPac, selloCfdi, selloSat, noCertificadoSat, noCertificado, cadenaOriginal };
 };
 
@@ -89,7 +103,17 @@ function ModalVistaPrevia({ factura, onClose, onDescargar, descargando, onTimbra
       const blob = await pdf(React.createElement(FacturaPDF, { factura: facturaData, logoUrl: '/logo-tufisti.png' })).toBlob(); const reader = new FileReader(); reader.readAsDataURL(blob);
       reader.onloadend = async () => {
         const base64 = (reader.result as string).split(',')[1];
-        const res = await fetch(`/api/facturas/${factura.id}/enviar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ destinatario: correo, pdfBase64: base64 }) });
+
+        // 🔴 CORRECCIÓN: AQUÍ AHORA ENVIAMOS TAMBIÉN EL XML (xmlContenido) AL BACKEND
+        const res = await fetch(`/api/facturas/${factura.id}/enviar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            destinatario: correo,
+            pdfBase64: base64,
+            xmlContenido: factura.xmlTimbrado || '' // <--- ¡AQUÍ ESTÁ LA MAGIA DEL XML!
+          })
+        });
         const data = await res.json(); setMsgCorreo(data.ok ? `✅ Enviada a ${correo}` : `❌ ${data.error}`); setEnviando(false);
       };
     } catch (err) { setMsgCorreo('❌ Error al generar o enviar el PDF'); setEnviando(false); }
@@ -178,33 +202,19 @@ function ModalVistaPrevia({ factura, onClose, onDescargar, descargando, onTimbra
 
 // ─── Componente Principal de Formulario ───────────────────────────────────────
 function NuevaFacturaForm() {
-  const searchParams = useSearchParams();
-  const cotizacionId = searchParams.get('cotizacionId');
-
-  const [clients, setClients] = useState<Client[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [conceptos, setConceptos] = useState<Concepto[]>([conceptoVacio()]);
-  const [submitting, setSubmitting] = useState(false);
-
-  const [facturaGuardada, setFacturaGuardada] = useState<FacturaGuardada | null>(null);
-  const [descargando, setDescargando] = useState(false);
-
+  const searchParams = useSearchParams(); const cotizacionId = searchParams.get('cotizacionId');
+  const [clients, setClients] = useState<Client[]>([]); const [products, setProducts] = useState<Product[]>([]);
+  const [conceptos, setConceptos] = useState<Concepto[]>([conceptoVacio()]); const [submitting, setSubmitting] = useState(false);
+  const [facturaGuardada, setFacturaGuardada] = useState<FacturaGuardada | null>(null); const [descargando, setDescargando] = useState(false);
   const cdmxInicial = getCDMXInfo();
 
-  const [clienteId, setClienteId] = useState('');
-  const [clienteData, setClienteData] = useState<Partial<Client>>({});
-  const [usoCFDI, setUsoCFDI] = useState('G03');
-  const [formaPago, setFormaPago] = useState('03');
-  const [metodoPago, setMetodoPago] = useState('PUE');
-  const [moneda, setMoneda] = useState('MXN');
-  const [tipoCambio, setTipoCambio] = useState(1);
-  const [serie, setSerie] = useState(cdmxInicial.serieStr);
-  const [folio, setFolio] = useState('1');
-  const [fecha, setFecha] = useState(cdmxInicial.fechaStr);
-  const [condicionesPago, setCondicionesPago] = useState('');
-  const [notas, setNotas] = useState('');
-  const [retencionIVAPct, setRetencionIVAPct] = useState(0);
-  const [retencionISRPct, setRetencionISRPct] = useState(0);
+  const [clienteId, setClienteId] = useState(''); const [clienteData, setClienteData] = useState<Partial<Client>>({});
+  const [usoCFDI, setUsoCFDI] = useState('G03'); const [formaPago, setFormaPago] = useState('03');
+  const [metodoPago, setMetodoPago] = useState('PUE'); const [moneda, setMoneda] = useState('MXN');
+  const [tipoCambio, setTipoCambio] = useState(1); const [serie, setSerie] = useState(cdmxInicial.serieStr);
+  const [folio, setFolio] = useState('1'); const [fecha, setFecha] = useState(cdmxInicial.fechaStr);
+  const [condicionesPago, setCondicionesPago] = useState(''); const [notas, setNotas] = useState('');
+  const [retencionIVAPct, setRetencionIVAPct] = useState(0); const [retencionISRPct, setRetencionISRPct] = useState(0);
 
   useEffect(() => { fetch('/api/clients').then(r => r.json()).then(d => setClients(Array.isArray(d) ? d : [])); fetch('/api/products').then(r => r.json()).then(d => setProducts(Array.isArray(d) ? d : [])); }, []);
   useEffect(() => { if (metodoPago === 'PPD') setFormaPago('99'); }, [metodoPago]);
@@ -221,28 +231,21 @@ function NuevaFacturaForm() {
     if (field === 'descuento' && value > 0) updated[index].descuentoPct = 0;
     setConceptos(updated);
   };
-
   const agregarConcepto = () => setConceptos([...conceptos, conceptoVacio()]);
   const eliminarConcepto = (i: number) => setConceptos(conceptos.filter((_, idx) => idx !== i));
 
-  const subtotal = conceptos.reduce((acc, c) => acc + calcularConcepto(c).importe, 0);
-  const totalDescuentos = conceptos.reduce((acc, c) => acc + calcularConcepto(c).descuentoMonto, 0);
-  const totalIVA = conceptos.reduce((acc, c) => acc + calcularConcepto(c).iva, 0);
-  const totalIEPS = conceptos.reduce((acc, c) => acc + calcularConcepto(c).ieps, 0);
-  const retencionIVA = subtotal * (retencionIVAPct / 100);
-  const retencionISR = subtotal * (retencionISRPct / 100);
+  const subtotal = conceptos.reduce((acc, c) => acc + calcularConcepto(c).importe, 0); const totalDescuentos = conceptos.reduce((acc, c) => acc + calcularConcepto(c).descuentoMonto, 0);
+  const totalIVA = conceptos.reduce((acc, c) => acc + calcularConcepto(c).iva, 0); const totalIEPS = conceptos.reduce((acc, c) => acc + calcularConcepto(c).ieps, 0);
+  const retencionIVA = subtotal * (retencionIVAPct / 100); const retencionISR = subtotal * (retencionISRPct / 100);
   const total = subtotal + totalIVA + totalIEPS - retencionIVA - retencionISR;
 
   const resetForm = (nuevoFolio: string) => {
     const nuevaInfoCDMX = getCDMXInfo();
-    setClienteId(''); setClienteData({}); setUsoCFDI('G03'); setFormaPago('03'); setMetodoPago('PUE');
-    setMoneda('MXN'); setTipoCambio(1); setSerie(nuevaInfoCDMX.serieStr); setFolio(nuevoFolio); setFecha(nuevaInfoCDMX.fechaStr);
-    setCondicionesPago(''); setNotas(''); setRetencionIVAPct(0); setRetencionISRPct(0); setConceptos([conceptoVacio()]);
+    setClienteId(''); setClienteData({}); setUsoCFDI('G03'); setFormaPago('03'); setMetodoPago('PUE'); setMoneda('MXN'); setTipoCambio(1); setSerie(nuevaInfoCDMX.serieStr); setFolio(nuevoFolio); setFecha(nuevaInfoCDMX.fechaStr); setCondicionesPago(''); setNotas(''); setRetencionIVAPct(0); setRetencionISRPct(0); setConceptos([conceptoVacio()]);
   };
 
   const handleDescargarModal = async () => {
-    if (!facturaGuardada) return;
-    setDescargando(true);
+    if (!facturaGuardada) return; setDescargando(true);
     try {
       const { pdf } = await import('@react-pdf/renderer'); const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF');
       const facturaData = {
@@ -258,47 +261,49 @@ function NuevaFacturaForm() {
   };
 
   const handleRevisar = async () => {
-    if (!clienteId) return alert('Selecciona un cliente');
-    if (conceptos.some(c => !c.productoId)) return alert('Todos los conceptos deben tener un producto');
-    if (conceptos.some(c => !c.descripcion?.trim())) return alert('Todos los conceptos deben tener descripción');
-
+    if (!clienteId) return alert('Selecciona un cliente'); if (conceptos.some(c => !c.productoId)) return alert('Todos los conceptos deben tener un producto'); if (conceptos.some(c => !c.descripcion?.trim())) return alert('Todos los conceptos deben tener descripción');
     setSubmitting(true);
-    // CORRECCIÓN VITAL AQUÍ: Forzamos el descuento a número válido en el payload
-    const payload = {
-      serie, folio, fecha, formaPago, metodoPago, moneda, tipoCambio, condicionesPago, notas, clienteId, usoCFDI, retencionIVAPct, retencionISRPct, cotizacionId: cotizacionId || undefined,
-      conceptos: conceptos.map(c => ({ ...c, descuento: Number(calcularConcepto(c).descuentoMonto) || 0 }))
-    };
-
+    const payload = { serie, folio, fecha, formaPago, metodoPago, moneda, tipoCambio, condicionesPago, notas, clienteId, usoCFDI, retencionIVAPct, retencionISRPct, cotizacionId: cotizacionId || undefined, conceptos: conceptos.map(c => ({ ...c, descuento: Number(calcularConcepto(c).descuentoMonto) || 0 })) };
     try {
       const resGuardar = await fetch('/api/facturas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!resGuardar.ok) { alert('❌ No se pudo guardar el borrador'); setSubmitting(false); return; }
       const dataFactura = await resGuardar.json();
-
-      setFacturaGuardada({
-        id: dataFactura.id, serie: dataFactura.serie ?? serie, folio: dataFactura.folio ?? folio, fecha: dataFactura.fecha ?? fecha, formaPago: dataFactura.formaPago ?? formaPago, metodoPago: dataFactura.metodoPago ?? metodoPago, moneda: dataFactura.moneda ?? moneda, subtotal: dataFactura.subtotal ?? subtotal, totalIVA: dataFactura.totalIVA ?? totalIVA, total: dataFactura.total ?? total, estado: dataFactura.estado ?? 'BORRADOR', uuid: dataFactura.uuid, client: (dataFactura.client || clienteData) as Client, conceptos: dataFactura.conceptos ?? conceptos,
-      });
+      setFacturaGuardada({ id: dataFactura.id, serie: dataFactura.serie ?? serie, folio: dataFactura.folio ?? folio, fecha: dataFactura.fecha ?? fecha, formaPago: dataFactura.formaPago ?? formaPago, metodoPago: dataFactura.metodoPago ?? metodoPago, moneda: dataFactura.moneda ?? moneda, subtotal: dataFactura.subtotal ?? subtotal, totalIVA: dataFactura.totalIVA ?? totalIVA, total: dataFactura.total ?? total, estado: dataFactura.estado ?? 'BORRADOR', uuid: dataFactura.uuid, client: (dataFactura.client || clienteData) as Client, conceptos: dataFactura.conceptos ?? conceptos });
       resetForm(String(parseInt(folio) + 1));
     } catch (error) { alert("❌ Ocurrió un error inesperado al guardar."); }
     setSubmitting(false);
   };
 
+  // 🔴 CORRECCIÓN: Generación del QR forzada y obtención de XML segura
   const handleTimbrarDesdeModal = async (idFactura: string) => {
     try {
       const resTimbrar = await fetch(`/api/facturas/${idFactura}/timbrar`, { method: 'POST' });
       const dataTimbrar = await resTimbrar.json();
 
-      if (resTimbrar.ok && dataTimbrar.xmlTimbrado) {
-        const ext = extraerDatosXML(dataTimbrar.xmlTimbrado);
+      if (resTimbrar.ok) {
+        const xmlCrudo = dataTimbrar.xmlTimbrado || dataTimbrar.xml || dataTimbrar.factura?.xmlTimbrado || dataTimbrar.factura?.xml || '';
+        const ext = extraerDatosXML(xmlCrudo);
+        const uuidFinal = ext.uuid || dataTimbrar.uuid || dataTimbrar.factura?.uuid;
+
+        if (!uuidFinal) {
+          alert('⚠️ Factura timbrada, pero el servidor no devolvió los datos completos del SAT.');
+          setFacturaGuardada(prev => prev ? { ...prev, estado: 'TIMBRADO' } : null);
+          return;
+        }
+
         let qrCodeUrl = '';
         try {
-          const QRCode = (await import('qrcode')).default; const totalStr = Number(facturaGuardada?.total || 0).toFixed(6); const sello8 = ext.selloCfdi ? ext.selloCfdi.slice(-8) : '';
-          const qrUrl = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${ext.uuid}&re=${EMISOR.rfc}&rr=${facturaGuardada?.client?.rfc}&tt=${totalStr}&fe=${sello8}`;
+          const totalStr = Number(facturaGuardada?.total || 0).toFixed(6);
+          const sello8 = ext.selloCfdi ? ext.selloCfdi.slice(-8) : '';
+          const qrUrl = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${uuidFinal}&re=${EMISOR.rfc}&rr=${facturaGuardada?.client?.rfc}&tt=${totalStr}&fe=${sello8}`;
           qrCodeUrl = await QRCode.toDataURL(qrUrl, { margin: 1 });
         } catch (e) { console.error("Error generando QR", e); }
 
         setFacturaGuardada(prev => prev ? {
-          ...prev, estado: 'TIMBRADO', uuid: ext.uuid || dataTimbrar.uuid, xmlTimbrado: dataTimbrar.xmlTimbrado, qrCodeUrl, selloCfdi: ext.selloCfdi, selloSat: ext.selloSat, cadenaOriginal: ext.cadenaOriginal, noCertificado: ext.noCertificado, noCertificadoSat: ext.noCertificadoSat, fechaTimbrado: ext.fechaTimbrado, rfcPac: ext.rfcPac
+          ...prev, estado: 'TIMBRADO', uuid: uuidFinal, xmlTimbrado: xmlCrudo, qrCodeUrl,
+          selloCfdi: ext.selloCfdi, selloSat: ext.selloSat, cadenaOriginal: ext.cadenaOriginal, noCertificado: ext.noCertificado, noCertificadoSat: ext.noCertificadoSat, fechaTimbrado: ext.fechaTimbrado, rfcPac: ext.rfcPac
         } : null);
+
       } else { alert(`⚠️ Falló el timbrado en el SAT: ${dataTimbrar.error || 'Error desconocido'}`); }
     } catch (error) { alert("❌ Ocurrió un error de red al intentar timbrar."); }
   };
@@ -348,7 +353,6 @@ function NuevaFacturaForm() {
                   <div className="space-y-1"><label className="text-xs font-bold uppercase text-slate-500">Precio Unitario</label><div className="relative"><span className="absolute left-3 top-2.5 text-slate-400 text-sm">$</span><input type="number" step="0.000001" value={c.precioUnitario} onChange={e => handleConceptoField(i, 'precioUnitario', parseFloat(e.target.value) || 0)} className="w-full p-2.5 pl-6 border rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500" /></div></div>
                 </div>
                 {c.productoId && <div className="space-y-1"><label className="text-xs font-bold uppercase text-slate-500">Descripción <span className="text-slate-400 font-normal normal-case">(editable — aparece en el CFDI)</span></label><input value={c.descripcion} onChange={e => handleConceptoField(i, 'descripcion', e.target.value)} className="w-full p-2.5 border rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 text-sm" /></div>}
-                {/* 🔴 RESTAURADO: DETALLES DEL CONCEPTO E IMPUESTOS */}
                 {c.productoId && (
                   <div className="grid grid-cols-2 md:grid-cols-6 gap-3 pt-2 border-t border-slate-200">
                     <div className="space-y-1"><label className="text-xs font-bold uppercase text-slate-400">Clave SAT</label><div className="text-xs font-mono bg-slate-100 p-2 rounded-lg">{c.claveProdServ}</div></div>
@@ -366,7 +370,6 @@ function NuevaFacturaForm() {
         </div>
       </div>
 
-      {/* 🔴 RESTAURADO: SECCIÓN DE RETENCIONES, IMPUESTOS Y TOTALES */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
         <h2 className="text-sm font-bold uppercase text-slate-400 mb-4">Retenciones e Impuestos</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

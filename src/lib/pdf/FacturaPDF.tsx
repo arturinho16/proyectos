@@ -156,7 +156,7 @@ export const FacturaPDF: React.FC<FacturaPDFProps> = ({ factura, logoUrl }) => {
         </View>
 
         {/* ── SELLOS Y QR EN DOS COLUMNAS (Solo Timbrada) ── */}
-        {!esBorrador && (factura.cadenaOriginal || factura.selloCfdi || factura.selloSat) && (
+        {!esBorrador && factura.uuid && (
           <View style={styles.sellosContainer}>
             {/* Columna Izquierda: QR */}
             <View style={styles.qrBox}>
