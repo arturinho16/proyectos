@@ -228,19 +228,37 @@ export async function timbrarFactura(datos: DatosFactura): Promise<{ uuid: strin
     throw new Error(`Error FINKOK: ${incidencia?.MensajeIncidencia || stampResult.CodEstatus || 'Error desconocido'}`);
   }
 
-  // 👇 NUEVO CÓDIGO A PARTIR DE AQUÍ 👇
+  if (!stampResult.UUID) {
+    const incidencias = stampResult.Incidencias?.Incidencia;
+    const incidencia = Array.isArray(incidencias) ? incidencias[0] : incidencias;
+    throw new Error(`Error FINKOK: ${incidencia?.MensajeIncidencia || stampResult.CodEstatus || 'Error desconocido'}`);
+  }
+
+  // 👇 REEMPLAZA DESDE AQUÍ HASTA EL FINAL DE LA FUNCIÓN 👇
   let xmlFinal = stampResult.xml;
 
-  // Verificamos si el XML ya es texto legible o si viene encriptado en base64
-  if (typeof xmlFinal === 'string' && !xmlFinal.startsWith('<?xml') && !xmlFinal.startsWith('<cfdi')) {
-    xmlFinal = Buffer.from(xmlFinal, 'base64').toString('utf-8');
-  } else if (Buffer.isBuffer(xmlFinal)) {
+  // 1. Aseguramos que sea un string manejable
+  if (Buffer.isBuffer(xmlFinal)) {
     xmlFinal = xmlFinal.toString('utf-8');
+  } else if (typeof xmlFinal !== 'string') {
+    xmlFinal = String(xmlFinal);
   }
+
+  // 2. Si NO incluye la etiqueta principal, entonces SÍ es Base64 y lo decodificamos
+  if (!xmlFinal.includes('cfdi:Comprobante')) {
+    const decodificado = Buffer.from(xmlFinal, 'base64').toString('utf-8');
+    // Verificamos si al decodificar ya es un XML válido
+    if (decodificado.includes('cfdi:Comprobante')) {
+      xmlFinal = decodificado;
+    }
+  }
+
+  // 3. 🔥 CRÍTICO: Quitamos el carácter BOM invisible y los espacios extra
+  xmlFinal = xmlFinal.replace(/^\uFEFF/, '').trim();
 
   return {
     uuid: stampResult.UUID,
-    xmlTimbrado: xmlFinal, // <- Ahora se guarda intacto
+    xmlTimbrado: xmlFinal,
     noCertificadoSAT: stampResult.NoCertificadoSAT
   };
 }

@@ -10,9 +10,16 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
-type Concepto = { descripcion: string; cantidad: number; importe: number; claveProdServ?: string; claveUnidad?: string; precioUnitario?: number; };
+type Concepto = {
+  descripcion: string; cantidad: number; importe: number; claveProdServ?: string;
+  claveUnidad?: string; unidad?: string; precioUnitario?: number;
+  objetoImpuesto?: string; ivaTasa?: number; noIdentificacion?: string;
+};
+
 type Factura = {
-  id: string; serie: string; folio: string; fecha: string; formaPago: string; metodoPago: string; moneda: string; subtotal: number; totalIVA: number; total: number; estado: string; uuid?: string; notas?: string; esGlobal?: boolean; xmlTimbrado?: string;
+  id: string; serie: string; folio: string; fecha: string; formaPago: string;
+  metodoPago: string; moneda: string; subtotal: number; totalIVA: number;
+  total: number; estado: string; uuid?: string; notas?: string; esGlobal?: boolean; xmlTimbrado?: string;
   client: { nombreRazonSocial: string; rfc: string; email?: string; cp?: string; regimenFiscal?: string; calle?: string; numExterior?: string; numInterior?: string; colonia?: string; municipio?: string; estado?: string; usoCfdiDefault?: string; };
   conceptos: Concepto[];
 };
@@ -26,37 +33,71 @@ const EMISOR = { nombre: 'OMAR ARTURO CORONA MONROY', rfc: 'COMO891216CM1', dire
 const CATALOGO_FORMA_PAGO: Record<string, string> = { '01': '01 - Efectivo', '02': '02 - Cheque nominativo', '03': '03 - Transferencia electrónica de fondos', '04': '04 - Tarjeta de crédito', '05': '05 - Monedero electrónico', '06': '06 - Dinero electrónico', '08': '08 - Vales de despensa', '12': '12 - Dación en pago', '13': '13 - Pago por subrogación', '14': '14 - Pago por consignación', '15': '15 - Condonación', '17': '17 - Compensación', '23': '23 - Novación', '24': '24 - Confusión', '25': '25 - Remisión de deuda', '26': '26 - Prescripción o caducidad', '27': '27 - A satisfacción del acreedor', '28': '28 - Tarjeta de débito', '29': '29 - Tarjeta de servicios', '30': '30 - Aplicación de anticipos', '31': '31 - Intermediarios', '99': '99 - Por definir' };
 const CATALOGO_METODO_PAGO: Record<string, string> = { 'PUE': 'PUE - Pago en una sola exhibición', 'PPD': 'PPD - Pago en parcialidades o diferido' };
 
+// ─── Extractor de XML a prueba de balas (Regex) ────────────────────────────────
 const extractCfdiData = (xml?: string) => {
-  if (!xml) return {};
+  if (!xml || xml.trim() === '') return {};
+
   try {
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xml, "text/xml");
-    const timbre = xmlDoc.getElementsByTagName("tfd:TimbreFiscalDigital")[0];
-    const comprobante = xmlDoc.getElementsByTagName("cfdi:Comprobante")[0];
+    const selloCfdi = xml.match(/\bSelloCFD="([^"]+)"/)?.[1] || "";
+    const selloSat = xml.match(/\bSelloSAT="([^"]+)"/)?.[1] || "";
+    const noCertificadoSat = xml.match(/\bNoCertificadoSAT="([^"]+)"/)?.[1] || "";
+    const fechaTimbrado = xml.match(/\bFechaTimbrado="([^"]+)"/)?.[1] || "";
+    const rfcPac = xml.match(/\bRfcProvCertif="([^"]+)"/)?.[1] || "";
+    const uuid = xml.match(/\bUUID="([^"]+)"/)?.[1] || "";
+    const noCertificado = xml.match(/\bNoCertificado="([^"]+)"/)?.[1] || "";
 
-    if (!timbre || !comprobante) return {};
+    const emisorRfc = xml.match(/<[^>]*Emisor[^>]*Rfc="([^"]+)"/)?.[1] || "";
+    const receptorRfc = xml.match(/<[^>]*Receptor[^>]*Rfc="([^"]+)"/)?.[1] || "";
+    const total = xml.match(/\bTotal="([^"]+)"/)?.[1] || "";
 
-    const selloCfdi = timbre.getAttribute("SelloCFD");
-    const selloSat = timbre.getAttribute("SelloSAT");
-    const noCertificadoSat = timbre.getAttribute("NoCertificadoSAT");
-    const fechaTimbrado = timbre.getAttribute("FechaTimbrado");
-    const rfcPac = timbre.getAttribute("RfcProvCertif");
-    const uuid = timbre.getAttribute("UUID");
-    const noCertificado = comprobante.getAttribute("NoCertificado");
-
-    const cadenaOriginal = `||1.1|${uuid}|${fechaTimbrado}|${rfcPac}|${selloCfdi}|${noCertificadoSat}||`;
-
-    const emisorRfc = xmlDoc.getElementsByTagName("cfdi:Emisor")[0]?.getAttribute("Rfc") || "";
-    const receptorRfc = xmlDoc.getElementsByTagName("cfdi:Receptor")[0]?.getAttribute("Rfc") || "";
-    const total = comprobante.getAttribute("Total") || "";
+    const cadenaOriginal = uuid && selloCfdi ? `||1.1|${uuid}|${fechaTimbrado}|${rfcPac}|${selloCfdi}|${noCertificadoSat}||` : "";
     const last8Sello = selloCfdi ? selloCfdi.slice(-8) : "";
 
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=` + encodeURIComponent(`https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${uuid}&re=${emisorRfc}&rr=${receptorRfc}&tt=${total}&fe=${last8Sello}`);
+    const qrUrl = uuid ? `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=` + encodeURIComponent(`https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${uuid}&re=${emisorRfc}&rr=${receptorRfc}&tt=${total}&fe=${last8Sello}`) : undefined;
 
-    return { selloCfdi, selloSat, noCertificadoSat, noCertificado, fechaTimbrado, rfcPac, cadenaOriginal, qrCodeUrl: qrUrl };
+    return { selloCfdi, selloSat, noCertificadoSat, noCertificado, fechaTimbrado, rfcPac, cadenaOriginal, qrCodeUrl: qrUrl, uuid };
   } catch (e) {
     return {};
   }
+};
+
+// ─── Constructor Centralizado del Objeto Factura para el PDF ─────────────────
+const buildFacturaData = (f: Factura) => {
+  const cfdiExtra = f.xmlTimbrado ? extractCfdiData(f.xmlTimbrado) : {};
+
+  return {
+    folio: f.folio,
+    serie: f.serie,
+    fecha: fmtFecha(f.fecha),
+    estado: f.estado,
+    uuid: cfdiExtra.uuid || f.uuid, // Aseguramos que el UUID pase sí o sí
+    emisor: EMISOR,
+    receptor: {
+      nombre: f.client.nombreRazonSocial,
+      rfc: f.client.rfc,
+      cp: f.client.cp,
+      regimenFiscal: f.client.regimenFiscal
+    },
+    conceptos: f.conceptos.map(c => ({
+      claveProdServ: c.claveProdServ || '',
+      cantidad: Number(c.cantidad),
+      claveUnidad: c.claveUnidad || '',
+      unidad: c.unidad || '',
+      descripcion: c.descripcion || '',
+      valorUnitario: Number(c.precioUnitario),
+      importe: Number(c.importe),
+      objetoImpuesto: c.objetoImpuesto || '02',
+      ivaTasa: c.ivaTasa != null ? Number(c.ivaTasa) : 0.16,
+      noIdentificacion: c.noIdentificacion || ''
+    })),
+    subtotal: Number(f.subtotal),
+    iva: Number(f.totalIVA),
+    total: Number(f.total),
+    moneda: f.moneda || 'MXN',
+    formaPago: CATALOGO_FORMA_PAGO[f.formaPago] || f.formaPago,
+    metodoPago: CATALOGO_METODO_PAGO[f.metodoPago] || f.metodoPago,
+    ...cfdiExtra
+  };
 };
 
 // ─── Modal de Correo ──────────────────────────────────────────────────────────
@@ -97,11 +138,8 @@ export default function FacturasPage() {
   const [paginaActual, setPaginaActual] = useState(1);
   const ITEMS_POR_PAGINA = 10;
 
-  // ── ESTADOS PARA DESCARGA MASIVA ──
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
   const [creandoZip, setCreandoZip] = useState(false);
-
-  // ── ESTADOS PARA ACCIONES DE FILA ──
   const [expandida, setExpandida] = useState<string | null>(null);
   const [descargando, setDescargando] = useState<string | null>(null);
   const [timbrando, setTimbrando] = useState<string | null>(null);
@@ -136,7 +174,6 @@ export default function FacturasPage() {
   const facturasPaginadas = facturasFiltradas.slice(startIndex, startIndex + ITEMS_POR_PAGINA);
   const totalGeneral = facturasFiltradas.filter(f => f.estado !== 'CANCELADO').reduce((acc, f) => acc + Number(f.total), 0);
 
-  // ── LÓGICA DE SELECCIÓN Y DESCARGA EN ZIP ──
   const toggleSeleccion = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (seleccionadas.includes(id)) {
@@ -161,16 +198,7 @@ export default function FacturasPage() {
         const f = facturas.find(x => x.id === id);
         if (!f) continue;
 
-        const cfdiExtra = f.xmlTimbrado ? extractCfdiData(f.xmlTimbrado) : {};
-        const facturaData = {
-          folio: f.folio, serie: f.serie, fecha: fmtFecha(f.fecha), estado: f.estado, uuid: f.uuid, emisor: EMISOR,
-          receptor: { nombre: f.client.nombreRazonSocial, rfc: f.client.rfc, cp: f.client.cp, regimenFiscal: f.client.regimenFiscal },
-          conceptos: f.conceptos.map(c => ({ claveProdServ: c.claveProdServ, cantidad: c.cantidad, descripcion: c.descripcion, valorUnitario: c.precioUnitario, importe: c.importe })),
-          subtotal: f.subtotal, iva: f.totalIVA, total: f.total, moneda: f.moneda,
-          formaPago: CATALOGO_FORMA_PAGO[f.formaPago] || f.formaPago,
-          metodoPago: CATALOGO_METODO_PAGO[f.metodoPago] || f.metodoPago,
-          ...cfdiExtra
-        };
+        const facturaData = buildFacturaData(f);
         const blob = await pdf(React.createElement(FacturaPDF, { factura: facturaData as any, logoUrl: '/logo-tufisti.png' })).toBlob();
         folderPDFs?.file(`${f.serie}-${f.folio}_${f.client.rfc}.pdf`, blob);
       }
@@ -184,22 +212,12 @@ export default function FacturasPage() {
     } catch (error) { alert("Error al generar el archivo ZIP."); } finally { setCreandoZip(false); }
   };
 
-  // ── ACCIONES INDIVIDUALES (TIMBRAR, CANCELAR, DESCARGAR, CORREO) ──
   const handleDescargar = async (f: Factura, e: React.MouseEvent) => {
     e.stopPropagation(); setDescargando(f.id);
     try {
       const { pdf } = await import('@react-pdf/renderer'); const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF'); const React = (await import('react')).default;
 
-      const cfdiExtra = f.xmlTimbrado ? extractCfdiData(f.xmlTimbrado) : {};
-      const facturaData = {
-        folio: f.folio, serie: f.serie, fecha: fmtFecha(f.fecha), estado: f.estado, uuid: f.uuid, emisor: EMISOR,
-        receptor: { nombre: f.client.nombreRazonSocial, rfc: f.client.rfc, cp: f.client.cp, regimenFiscal: f.client.regimenFiscal },
-        conceptos: f.conceptos.map(c => ({ claveProdServ: c.claveProdServ, cantidad: c.cantidad, descripcion: c.descripcion, valorUnitario: c.precioUnitario, importe: c.importe })),
-        subtotal: f.subtotal, iva: f.totalIVA, total: f.total, moneda: f.moneda,
-        formaPago: CATALOGO_FORMA_PAGO[f.formaPago] || f.formaPago,
-        metodoPago: CATALOGO_METODO_PAGO[f.metodoPago] || f.metodoPago,
-        ...cfdiExtra
-      };
+      const facturaData = buildFacturaData(f);
 
       const blob = await pdf(React.createElement(FacturaPDF, { factura: facturaData as any, logoUrl: '/logo-tufisti.png' })).toBlob();
       const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Factura-${f.serie}${f.folio}.pdf`; a.click();
@@ -233,17 +251,7 @@ export default function FacturasPage() {
     try {
       const { pdf } = await import('@react-pdf/renderer'); const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF'); const React = (await import('react')).default;
 
-      const f = facturaCorreo;
-      const cfdiExtra = f.xmlTimbrado ? extractCfdiData(f.xmlTimbrado) : {};
-      const facturaData = {
-        folio: f.folio, serie: f.serie, fecha: fmtFecha(f.fecha), estado: f.estado, uuid: f.uuid, emisor: EMISOR,
-        receptor: { nombre: f.client.nombreRazonSocial, rfc: f.client.rfc, cp: f.client.cp, regimenFiscal: f.client.regimenFiscal },
-        conceptos: f.conceptos.map(c => ({ claveProdServ: c.claveProdServ, cantidad: c.cantidad, descripcion: c.descripcion, valorUnitario: c.precioUnitario, importe: c.importe })),
-        subtotal: f.subtotal, iva: f.totalIVA, total: f.total, moneda: f.moneda,
-        formaPago: CATALOGO_FORMA_PAGO[f.formaPago] || f.formaPago,
-        metodoPago: CATALOGO_METODO_PAGO[f.metodoPago] || f.metodoPago,
-        ...cfdiExtra
-      };
+      const facturaData = buildFacturaData(facturaCorreo);
 
       const blob = await pdf(React.createElement(FacturaPDF, { factura: facturaData as any, logoUrl: '/logo-tufisti.png' })).toBlob();
       const reader = new FileReader(); reader.readAsDataURL(blob);
