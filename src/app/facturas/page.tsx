@@ -20,23 +20,125 @@ type Factura = {
   id: string; serie: string; folio: string; fecha: string; formaPago: string;
   metodoPago: string; moneda: string; subtotal: number; totalIVA: number;
   total: number; estado: string; uuid?: string; notas?: string; esGlobal?: boolean; xmlTimbrado?: string;
-  client: { nombreRazonSocial: string; rfc: string; email?: string; cp?: string; regimenFiscal?: string; calle?: string; numExterior?: string; numInterior?: string; colonia?: string; municipio?: string; estado?: string; usoCfdiDefault?: string; };
+  client: {
+    nombreRazonSocial: string; rfc: string; email?: string; cp?: string;
+    regimenFiscal?: string; calle?: string; numExterior?: string; numInterior?: string;
+    colonia?: string; municipio?: string; estado?: string; usoCfdiDefault?: string;
+  };
   conceptos: Concepto[];
 };
 
 // ─── Helpers & Catálogos ──────────────────────────────────────────────────────
-const ESTADO_BADGE: Record<string, string> = { BORRADOR: 'bg-amber-100 text-amber-700 border border-amber-200', TIMBRADO: 'bg-green-100 text-green-700 border border-green-200', CANCELADO: 'bg-red-100 text-red-600 border border-red-200', };
+const ESTADO_BADGE: Record<string, string> = {
+  BORRADOR: 'bg-amber-100 text-amber-700 border border-amber-200',
+  TIMBRADO: 'bg-green-100 text-green-700 border border-green-200',
+  CANCELADO: 'bg-red-100 text-red-600 border border-red-200',
+};
 const fmt = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
 const fmtFecha = (d: string) => new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
-const EMISOR = { nombre: 'OMAR ARTURO CORONA MONROY', rfc: 'COMO891216CM1', direccion: 'Francisco Clavijero 106 Int. 2, Centro', cp: '42000 HIDALGO', regimenFiscal: '626 - Régimen Simplificado de Confianza', };
 
-const CATALOGO_FORMA_PAGO: Record<string, string> = { '01': '01 - Efectivo', '02': '02 - Cheque nominativo', '03': '03 - Transferencia electrónica de fondos', '04': '04 - Tarjeta de crédito', '05': '05 - Monedero electrónico', '06': '06 - Dinero electrónico', '08': '08 - Vales de despensa', '12': '12 - Dación en pago', '13': '13 - Pago por subrogación', '14': '14 - Pago por consignación', '15': '15 - Condonación', '17': '17 - Compensación', '23': '23 - Novación', '24': '24 - Confusión', '25': '25 - Remisión de deuda', '26': '26 - Prescripción o caducidad', '27': '27 - A satisfacción del acreedor', '28': '28 - Tarjeta de débito', '29': '29 - Tarjeta de servicios', '30': '30 - Aplicación de anticipos', '31': '31 - Intermediarios', '99': '99 - Por definir' };
-const CATALOGO_METODO_PAGO: Record<string, string> = { 'PUE': 'PUE - Pago en una sola exhibición', 'PPD': 'PPD - Pago en parcialidades o diferido' };
+const EMISOR = {
+  nombre: 'OMAR ARTURO CORONA MONROY',
+  rfc: 'COMO891216CM1',
+  direccion: 'Francisco Clavijero 106 Int. 2, Centro',
+  cp: '42000 HIDALGO',
+  regimenFiscal: '626 - Régimen Simplificado de Confianza',
+  telefono: '7712427953',
+};
+
+const CATALOGO_FORMA_PAGO: Record<string, string> = {
+  '01': '01 - Efectivo', '02': '02 - Cheque nominativo',
+  '03': '03 - Transferencia electrónica de fondos', '04': '04 - Tarjeta de crédito',
+  '05': '05 - Monedero electrónico', '06': '06 - Dinero electrónico',
+  '08': '08 - Vales de despensa', '12': '12 - Dación en pago',
+  '13': '13 - Pago por subrogación', '14': '14 - Pago por consignación',
+  '15': '15 - Condonación', '17': '17 - Compensación',
+  '23': '23 - Novación', '24': '24 - Confusión',
+  '25': '25 - Remisión de deuda', '26': '26 - Prescripción o caducidad',
+  '27': '27 - A satisfacción del acreedor', '28': '28 - Tarjeta de débito',
+  '29': '29 - Tarjeta de servicios', '30': '30 - Aplicación de anticipos',
+  '31': '31 - Intermediarios', '99': '99 - Por definir',
+};
+
+const CATALOGO_METODO_PAGO: Record<string, string> = {
+  'PUE': 'PUE - Pago en una sola exhibición',
+  'PPD': 'PPD - Pago en parcialidades o diferido',
+};
+
+const CATALOGO_USO_CFDI: Record<string, string> = {
+  'G01': 'G01 - Adquisición de mercancias',
+  'G02': 'G02 - Devoluciones, descuentos o bonificaciones',
+  'G03': 'G03 - Gastos en general',
+  'I01': 'I01 - Construcciones',
+  'I02': 'I02 - Mobilario y equipo de oficina por inversiones',
+  'I03': 'I03 - Equipo de transporte',
+  'I04': 'I04 - Equipo de computo y accesorios',
+  'I05': 'I05 - Dados, troqueles, moldes, matrices y herramental',
+  'I06': 'I06 - Comunicaciones telefónicas',
+  'I08': 'I08 - Otra maquinaria y equipo',
+  'D01': 'D01 - Honorarios médicos, dentales y gastos hospitalarios',
+  'D10': 'D10 - Pagos por servicios educativos (colegiaturas)',
+  'S01': 'S01 - Sin efectos fiscales',
+  'CP01': 'CP01 - Pagos',
+  'CN01': 'CN01 - Nómina',
+};
+
+const CATALOGO_REGIMEN_FISCAL: Record<string, string> = {
+  '601': '601 - General de Ley Personas Morales',
+  '603': '603 - Personas Morales con Fines no Lucrativos',
+  '605': '605 - Sueldos y Salarios e Ingresos Asimilados a Salarios',
+  '606': '606 - Arrendamiento',
+  '608': '608 - Demás ingresos',
+  '609': '609 - Consolidación',
+  '610': '610 - Residentes en el Extranjero sin Establecimiento Permanente en México',
+  '611': '611 - Ingresos por Dividendos (socios y accionistas)',
+  '612': '612 - Personas Físicas con Actividades Empresariales y Profesionales',
+  '614': '614 - Ingresos por intereses',
+  '616': '616 - Sin obligaciones fiscales',
+  '620': '620 - Sociedades Cooperativas de Producción que optan por diferir sus ingresos',
+  '621': '621 - Incorporación Fiscal',
+  '622': '622 - Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras',
+  '623': '623 - Opcional para Grupos de Sociedades',
+  '624': '624 - Coordinados',
+  '625': '625 - Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas',
+  '626': '626 - Régimen Simplificado de Confianza',
+};
+
+// ─── Número a Letra ───────────────────────────────────────────────────────────
+const numeroALetra = (num: number): string => {
+  const entero = Math.floor(num);
+  const centavos = Math.round((num - entero) * 100);
+  const unidades = ['', 'UN', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE',
+    'DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE', 'DIECISÉIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE'];
+  const decenas = ['', '', 'VEINTE', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+  const centenas = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS',
+    'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'];
+
+  const convertirGrupo = (n: number): string => {
+    if (n === 0) return '';
+    if (n === 100) return 'CIEN';
+    let resultado = '';
+    if (n >= 100) { resultado += centenas[Math.floor(n / 100)] + ' '; n %= 100; }
+    if (n >= 20) { resultado += decenas[Math.floor(n / 10)]; if (n % 10 !== 0) resultado += ' Y ' + unidades[n % 10]; }
+    else if (n > 0) resultado += unidades[n];
+    return resultado.trim();
+  };
+
+  const convertir = (n: number): string => {
+    if (n === 0) return 'CERO';
+    let resultado = '';
+    if (n >= 1000000) { const m = Math.floor(n / 1000000); resultado += (m === 1 ? 'UN MILLÓN' : convertirGrupo(m) + ' MILLONES') + ' '; n %= 1000000; }
+    if (n >= 1000) { const m = Math.floor(n / 1000); resultado += (m === 1 ? 'MIL' : convertirGrupo(m) + ' MIL') + ' '; n %= 1000; }
+    resultado += convertirGrupo(n);
+    return resultado.trim();
+  };
+
+  return `${convertir(entero)} PESOS ${centavos.toString().padStart(2, '0')}/100 MXN`;
+};
 
 // ─── Extractor de XML a prueba de balas (Regex) ────────────────────────────────
 const extractCfdiData = (xml?: string) => {
   if (!xml || xml.trim() === '') return {};
-
   try {
     const selloCfdi = xml.match(/\bSelloCFD="([^"]+)"/)?.[1] || "";
     const selloSat = xml.match(/\bSelloSAT="([^"]+)"/)?.[1] || "";
@@ -45,16 +147,15 @@ const extractCfdiData = (xml?: string) => {
     const rfcPac = xml.match(/\bRfcProvCertif="([^"]+)"/)?.[1] || "";
     const uuid = xml.match(/\bUUID="([^"]+)"/)?.[1] || "";
     const noCertificado = xml.match(/\bNoCertificado="([^"]+)"/)?.[1] || "";
-
     const emisorRfc = xml.match(/<[^>]*Emisor[^>]*Rfc="([^"]+)"/)?.[1] || "";
     const receptorRfc = xml.match(/<[^>]*Receptor[^>]*Rfc="([^"]+)"/)?.[1] || "";
     const total = xml.match(/\bTotal="([^"]+)"/)?.[1] || "";
-
     const cadenaOriginal = uuid && selloCfdi ? `||1.1|${uuid}|${fechaTimbrado}|${rfcPac}|${selloCfdi}|${noCertificadoSat}||` : "";
     const last8Sello = selloCfdi ? selloCfdi.slice(-8) : "";
-
-    const qrUrl = uuid ? `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=` + encodeURIComponent(`https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${uuid}&re=${emisorRfc}&rr=${receptorRfc}&tt=${total}&fe=${last8Sello}`) : undefined;
-
+    const qrUrl = uuid
+      ? `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=` +
+      encodeURIComponent(`https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${uuid}&re=${emisorRfc}&rr=${receptorRfc}&tt=${total}&fe=${last8Sello}`)
+      : undefined;
     return { selloCfdi, selloSat, noCertificadoSat, noCertificado, fechaTimbrado, rfcPac, cadenaOriginal, qrCodeUrl: qrUrl, uuid };
   } catch (e) {
     return {};
@@ -65,18 +166,32 @@ const extractCfdiData = (xml?: string) => {
 const buildFacturaData = (f: Factura) => {
   const cfdiExtra = f.xmlTimbrado ? extractCfdiData(f.xmlTimbrado) : {};
 
+  // Construir dirección completa del receptor desde sus campos
+  const partesDireccion = [
+    f.client.calle,
+    f.client.numExterior || null,
+    f.client.numInterior ? `Int. ${f.client.numInterior}` : null,
+    f.client.colonia,
+    f.client.municipio,
+    f.client.estado,
+    'MEXICO',
+  ].filter(Boolean);
+  const direccionReceptor = partesDireccion.length > 1 ? partesDireccion.join(', ') : undefined;
+
   return {
     folio: f.folio,
     serie: f.serie,
     fecha: fmtFecha(f.fecha),
     estado: f.estado,
-    uuid: cfdiExtra.uuid || f.uuid, // Aseguramos que el UUID pase sí o sí
+    uuid: cfdiExtra.uuid || f.uuid,
     emisor: EMISOR,
     receptor: {
       nombre: f.client.nombreRazonSocial,
       rfc: f.client.rfc,
+      direccion: direccionReceptor,
       cp: f.client.cp,
-      regimenFiscal: f.client.regimenFiscal
+      usoCfdi: CATALOGO_USO_CFDI[f.client.usoCfdiDefault || ''] || f.client.usoCfdiDefault,
+      regimenFiscal: CATALOGO_REGIMEN_FISCAL[f.client.regimenFiscal || ''] || f.client.regimenFiscal,
     },
     conceptos: f.conceptos.map(c => ({
       claveProdServ: c.claveProdServ || '',
@@ -88,20 +203,23 @@ const buildFacturaData = (f: Factura) => {
       importe: Number(c.importe),
       objetoImpuesto: c.objetoImpuesto || '02',
       ivaTasa: c.ivaTasa != null ? Number(c.ivaTasa) : 0.16,
-      noIdentificacion: c.noIdentificacion || ''
+      noIdentificacion: c.noIdentificacion || '',
     })),
     subtotal: Number(f.subtotal),
     iva: Number(f.totalIVA),
     total: Number(f.total),
-    moneda: f.moneda || 'MXN',
+    moneda: f.moneda ? `${f.moneda} - Peso Mexicano` : 'MXN - Peso Mexicano',
     formaPago: CATALOGO_FORMA_PAGO[f.formaPago] || f.formaPago,
     metodoPago: CATALOGO_METODO_PAGO[f.metodoPago] || f.metodoPago,
-    ...cfdiExtra
+    totalLetra: numeroALetra(Number(f.total)),
+    ...cfdiExtra,
   };
 };
 
 // ─── Modal de Correo ──────────────────────────────────────────────────────────
-function ModalCorreo({ factura, onClose, onEnviar, enviando, mensaje }: { factura: Factura; onClose: () => void; onEnviar: (correo: string) => void; enviando: boolean; mensaje: string; }) {
+function ModalCorreo({ factura, onClose, onEnviar, enviando, mensaje }: {
+  factura: Factura; onClose: () => void; onEnviar: (correo: string) => void; enviando: boolean; mensaje: string;
+}) {
   const [correo, setCorreo] = useState(factura.client.email || '');
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -116,13 +234,17 @@ function ModalCorreo({ factura, onClose, onEnviar, enviando, mensaje }: { factur
         </div>
         <div className="space-y-1">
           <label className="text-sm font-bold uppercase text-slate-500">Correo destino</label>
-          <input type="email" value={correo} onChange={e => setCorreo(e.target.value)} className="w-full p-3 border-2 border-slate-300 rounded-xl outline-none focus:ring-4 focus:ring-purple-500/10 text-base" placeholder="correo@ejemplo.com" />
+          <input type="email" value={correo} onChange={e => setCorreo(e.target.value)}
+            className="w-full p-3 border-2 border-slate-300 rounded-xl outline-none focus:ring-4 focus:ring-purple-500/10 text-base"
+            placeholder="correo@ejemplo.com" />
         </div>
         {mensaje && <p className={`text-sm font-bold ${mensaje.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{mensaje}</p>}
         <div className="flex gap-3 pt-2">
           <button onClick={onClose} className="flex-1 py-3 border-2 border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 text-base font-bold">Cancelar</button>
-          <button onClick={() => onEnviar(correo)} disabled={enviando || !correo} className="flex-1 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 disabled:opacity-50 text-base font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-100">
-            {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />} {enviando ? 'Enviando...' : 'Enviar'}
+          <button onClick={() => onEnviar(correo)} disabled={enviando || !correo}
+            className="flex-1 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 disabled:opacity-50 text-base font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-100">
+            {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+            {enviando ? 'Enviando...' : 'Enviar'}
           </button>
         </div>
       </div>
@@ -164,7 +286,11 @@ export default function FacturasPage() {
 
   const facturasFiltradas = facturas.filter(f => {
     const busqueda = q.toLowerCase();
-    const coincideTexto = !q || f.client.nombreRazonSocial.toLowerCase().includes(busqueda) || f.client.rfc.toLowerCase().includes(busqueda) || f.serie.toLowerCase().includes(busqueda) || f.folio.toLowerCase().includes(busqueda);
+    const coincideTexto = !q ||
+      f.client.nombreRazonSocial.toLowerCase().includes(busqueda) ||
+      f.client.rfc.toLowerCase().includes(busqueda) ||
+      f.serie.toLowerCase().includes(busqueda) ||
+      f.folio.toLowerCase().includes(busqueda);
     const coincideEstado = !filtroEstado || f.estado === filtroEstado;
     return coincideTexto && coincideEstado;
   });
@@ -189,7 +315,6 @@ export default function FacturasPage() {
     try {
       const zip = new JSZip();
       const folderPDFs = zip.folder("Facturas_PDF");
-
       const { pdf } = await import('@react-pdf/renderer');
       const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF');
       const React = (await import('react')).default;
@@ -197,7 +322,6 @@ export default function FacturasPage() {
       for (const id of seleccionadas) {
         const f = facturas.find(x => x.id === id);
         if (!f) continue;
-
         const facturaData = buildFacturaData(f);
         const blob = await pdf(React.createElement(FacturaPDF, { factura: facturaData as any, logoUrl: '/logo-tufisti.png' })).toBlob();
         folderPDFs?.file(`${f.serie}-${f.folio}_${f.client.rfc}.pdf`, blob);
@@ -207,20 +331,21 @@ export default function FacturasPage() {
       const hoy = new Date();
       const fechaFormateada = `${hoy.getDate().toString().padStart(2, '0')}-${(hoy.getMonth() + 1).toString().padStart(2, '0')}-${hoy.getFullYear()}`;
       saveAs(zipBlob, `Lote_Facturas_${fechaFormateada}.zip`);
-
       setSeleccionadas([]);
-    } catch (error) { alert("Error al generar el archivo ZIP."); } finally { setCreandoZip(false); }
+    } catch (error) { alert("Error al generar el archivo ZIP."); }
+    finally { setCreandoZip(false); }
   };
 
   const handleDescargar = async (f: Factura, e: React.MouseEvent) => {
     e.stopPropagation(); setDescargando(f.id);
     try {
-      const { pdf } = await import('@react-pdf/renderer'); const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF'); const React = (await import('react')).default;
-
+      const { pdf } = await import('@react-pdf/renderer');
+      const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF');
+      const React = (await import('react')).default;
       const facturaData = buildFacturaData(f);
-
       const blob = await pdf(React.createElement(FacturaPDF, { factura: facturaData as any, logoUrl: '/logo-tufisti.png' })).toBlob();
-      const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Factura-${f.serie}${f.folio}.pdf`; a.click();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `Factura-${f.serie}${f.folio}.pdf`; a.click();
     } finally { setDescargando(null); }
   };
 
@@ -249,15 +374,18 @@ export default function FacturasPage() {
     if (!facturaCorreo) return;
     setEnviandoCorreo(true); setMsgCorreo('');
     try {
-      const { pdf } = await import('@react-pdf/renderer'); const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF'); const React = (await import('react')).default;
-
+      const { pdf } = await import('@react-pdf/renderer');
+      const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF');
+      const React = (await import('react')).default;
       const facturaData = buildFacturaData(facturaCorreo);
-
       const blob = await pdf(React.createElement(FacturaPDF, { factura: facturaData as any, logoUrl: '/logo-tufisti.png' })).toBlob();
       const reader = new FileReader(); reader.readAsDataURL(blob);
       reader.onloadend = async () => {
         const base64 = (reader.result as string).split(',')[1];
-        const res = await fetch(`/api/facturas/${facturaCorreo.id}/enviar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ destinatario: correo, pdfBase64: base64 }) });
+        const res = await fetch(`/api/facturas/${facturaCorreo.id}/enviar`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ destinatario: correo, pdfBase64: base64 }),
+        });
         const data = await res.json();
         setMsgCorreo(data.ok ? `✅ ${data.mensaje}` : `❌ ${data.error}`);
         if (data.ok) setTimeout(() => { setFacturaCorreo(null); setMsgCorreo(''); }, 2000);
@@ -266,29 +394,44 @@ export default function FacturasPage() {
     } catch (err) { setMsgCorreo('❌ Error al generar o enviar el PDF'); setEnviandoCorreo(false); }
   };
 
-  const handleCopiar = (texto: string, id: string) => { navigator.clipboard.writeText(texto); setCopiado(id); setTimeout(() => setCopiado(null), 2000); };
+  const handleCopiar = (texto: string, id: string) => {
+    navigator.clipboard.writeText(texto); setCopiado(id); setTimeout(() => setCopiado(null), 2000);
+  };
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-800 relative">
-      {facturaCorreo && <ModalCorreo factura={facturaCorreo} onClose={() => { setFacturaCorreo(null); setMsgCorreo(''); }} onEnviar={handleEnviarCorreo} enviando={enviandoCorreo} mensaje={msgCorreo} />}
+      {facturaCorreo && (
+        <ModalCorreo
+          factura={facturaCorreo}
+          onClose={() => { setFacturaCorreo(null); setMsgCorreo(''); }}
+          onEnviar={handleEnviarCorreo}
+          enviando={enviandoCorreo}
+          mensaje={msgCorreo}
+        />
+      )}
 
       <div className="max-w-7xl mx-auto space-y-6 pb-24">
 
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 font-bold transition-colors"><ArrowLeft className="w-5 h-5" /> Panel</Link>
+            <Link href="/" className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 font-bold transition-colors">
+              <ArrowLeft className="w-5 h-5" /> Panel
+            </Link>
             <FileText className="w-8 h-8 text-blue-600 ml-2" />
             <h1 className="text-3xl font-bold">Facturas</h1>
           </div>
-
           <div className="flex items-center gap-3">
-            <Link href="/facturas/global" className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition-all font-bold text-base shadow-lg shadow-indigo-100"><Globe className="w-5 h-5" /> Factura Global</Link>
-            <Link href="/facturas/nueva" className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-all font-bold text-base shadow-lg shadow-blue-100"><PlusCircle className="w-5 h-5" /> Nueva Factura</Link>
+            <Link href="/facturas/global" className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition-all font-bold text-base shadow-lg shadow-indigo-100">
+              <Globe className="w-5 h-5" /> Factura Global
+            </Link>
+            <Link href="/facturas/nueva" className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-all font-bold text-base shadow-lg shadow-blue-100">
+              <PlusCircle className="w-5 h-5" /> Nueva Factura
+            </Link>
           </div>
         </div>
 
-        {/* KPIs y Buscador */}
+        {/* KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { label: 'Total Encontradas', value: facturasFiltradas.length, color: 'text-slate-700' },
@@ -296,17 +439,27 @@ export default function FacturasPage() {
             { label: 'Borradores', value: facturasFiltradas.filter(f => f.estado === 'BORRADOR').length, color: 'text-amber-600' },
             { label: 'Monto Total', value: fmt(totalGeneral), color: 'text-blue-700' },
           ].map(k => (
-            <div key={k.label} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div className="text-xs font-bold uppercase text-slate-500 mb-1">{k.label}</div><div className={`text-2xl font-bold ${k.color}`}>{k.value}</div></div>
+            <div key={k.label} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+              <div className="text-xs font-bold uppercase text-slate-500 mb-1">{k.label}</div>
+              <div className={`text-2xl font-bold ${k.color}`}>{k.value}</div>
+            </div>
           ))}
         </div>
 
+        {/* Buscador */}
         <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-wrap gap-4 items-center">
           <div className="flex-1 min-w-[300px] relative">
             <Search className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por cliente, RFC, serie o folio..." className="w-full pl-10 p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500 text-base" />
+            <input value={q} onChange={e => setQ(e.target.value)}
+              placeholder="Buscar por cliente, RFC, serie o folio..."
+              className="w-full pl-10 p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500 text-base" />
           </div>
-          <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl outline-none text-base bg-white">
-            <option value="">Todos los estados</option><option value="BORRADOR">Borrador</option><option value="TIMBRADO">Timbrado</option><option value="CANCELADO">Cancelado</option>
+          <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}
+            className="p-3 border-2 border-slate-200 rounded-xl outline-none text-base bg-white">
+            <option value="">Todos los estados</option>
+            <option value="BORRADOR">Borrador</option>
+            <option value="TIMBRADO">Timbrado</option>
+            <option value="CANCELADO">Cancelado</option>
           </select>
         </div>
 
@@ -330,32 +483,52 @@ export default function FacturasPage() {
                 ) : (
                   facturasPaginadas.map(f => (
                     <React.Fragment key={f.id}>
-                      <tr className={`hover:bg-blue-50/50 transition-colors cursor-pointer ${seleccionadas.includes(f.id) ? 'bg-blue-50' : ''}`} onClick={() => setExpandida(expandida === f.id ? null : f.id)}>
+                      <tr
+                        className={`hover:bg-blue-50/50 transition-colors cursor-pointer ${seleccionadas.includes(f.id) ? 'bg-blue-50' : ''}`}
+                        onClick={() => setExpandida(expandida === f.id ? null : f.id)}
+                      >
                         <td className="px-4 py-4 text-center" onClick={e => toggleSeleccion(f.id, e)}>
                           <div className={`w-5 h-5 border-2 rounded mx-auto flex items-center justify-center transition-colors ${seleccionadas.includes(f.id) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
-                            {seleccionadas.includes(f.id) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                            {seleccionadas.includes(f.id) && (
+                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
                           </div>
                         </td>
                         <td className="px-6 py-4 font-mono font-bold text-blue-700">{f.serie}-{f.folio}</td>
                         <td className="px-6 py-4 text-slate-600">{fmtFecha(f.fecha)}</td>
-                        <td className="px-6 py-4"><div className="font-bold text-slate-800">{f.client.nombreRazonSocial}</div><div className="text-sm font-mono text-slate-500 uppercase">{f.client.rfc}</div></td>
+                        <td className="px-6 py-4">
+                          <div className="font-bold text-slate-800">{f.client.nombreRazonSocial}</div>
+                          <div className="text-sm font-mono text-slate-500 uppercase">{f.client.rfc}</div>
+                        </td>
                         <td className="px-6 py-4 font-mono font-bold">{fmt(f.total)}</td>
-                        <td className="px-6 py-4"><span className={`px-3 py-1 rounded-lg text-sm font-bold ${ESTADO_BADGE[f.estado]}`}>{f.estado}</span></td>
-
+                        <td className="px-6 py-4">
+                          <span className={`px-3 py-1 rounded-lg text-sm font-bold ${ESTADO_BADGE[f.estado]}`}>{f.estado}</span>
+                        </td>
                         <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
-                            <button title="Ver detalle" onClick={() => setExpandida(expandida === f.id ? null : f.id)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Eye className="w-5 h-5" /></button>
-                            <button title="Descargar PDF" onClick={(e) => handleDescargar(f, e)} disabled={descargando === f.id} className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
+                            <button title="Ver detalle" onClick={() => setExpandida(expandida === f.id ? null : f.id)}
+                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                              <Eye className="w-5 h-5" />
+                            </button>
+                            <button title="Descargar PDF" onClick={(e) => handleDescargar(f, e)} disabled={descargando === f.id}
+                              className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
                               {descargando === f.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
                             </button>
-                            <button title="Enviar por correo" onClick={() => { setFacturaCorreo(f); setMsgCorreo(''); }} className="p-2 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"><Mail className="w-5 h-5" /></button>
+                            <button title="Enviar por correo" onClick={() => { setFacturaCorreo(f); setMsgCorreo(''); }}
+                              className="p-2 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors">
+                              <Mail className="w-5 h-5" />
+                            </button>
                             {f.estado === 'BORRADOR' && (
-                              <button title="Timbrar factura en el SAT" onClick={(e) => handleTimbrar(f, e)} disabled={timbrando === f.id} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+                              <button title="Timbrar factura en el SAT" onClick={(e) => handleTimbrar(f, e)} disabled={timbrando === f.id}
+                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
                                 {timbrando === f.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Stamp className="w-5 h-5" />}
                               </button>
                             )}
                             {f.estado !== 'CANCELADO' && (
-                              <button title="Cancelar Factura" onClick={(e) => handleCancelar(f, e)} disabled={cancelando === f.id} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                              <button title="Cancelar Factura" onClick={(e) => handleCancelar(f, e)} disabled={cancelando === f.id}
+                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                                 {cancelando === f.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Ban className="w-5 h-5" />}
                               </button>
                             )}
@@ -363,7 +536,7 @@ export default function FacturasPage() {
                         </td>
                       </tr>
 
-                      {/* ── FILA EXPANDIBLE DE DETALLES ── */}
+                      {/* Fila expandible */}
                       {expandida === f.id && (
                         <tr className="bg-slate-50/80 border-b border-slate-200">
                           <td colSpan={7} className="px-8 py-6">
@@ -395,34 +568,38 @@ export default function FacturasPage() {
             </table>
           </div>
 
-          {/* ── PAGINACIÓN ── */}
+          {/* Paginación */}
           {totalPaginas > 1 && (
             <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-between mt-auto">
-              <span className="text-sm text-slate-500 font-medium">Página {paginaActual} de {totalPaginas} ({facturasFiltradas.length} resultados)</span>
+              <span className="text-sm text-slate-500 font-medium">
+                Página {paginaActual} de {totalPaginas} ({facturasFiltradas.length} resultados)
+              </span>
               <div className="flex gap-2">
-                <button onClick={() => setPaginaActual(p => Math.max(1, p - 1))} disabled={paginaActual === 1} className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-100 disabled:opacity-50">Anterior</button>
-                <button onClick={() => setPaginaActual(p => Math.min(totalPaginas, p + 1))} disabled={paginaActual === totalPaginas} className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-100 disabled:opacity-50">Siguiente</button>
+                <button onClick={() => setPaginaActual(p => Math.max(1, p - 1))} disabled={paginaActual === 1}
+                  className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-100 disabled:opacity-50">Anterior</button>
+                <button onClick={() => setPaginaActual(p => Math.min(totalPaginas, p + 1))} disabled={paginaActual === totalPaginas}
+                  className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-100 disabled:opacity-50">Siguiente</button>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* ── MENÚ FLOTANTE PARA DESCARGA MASIVA ── */}
+      {/* Menú flotante descarga masiva */}
       {seleccionadas.length > 0 && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-6 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300 border border-slate-700">
           <div className="font-bold text-base">
             <span className="bg-blue-500 text-white px-3 py-1 rounded-lg mr-3">{seleccionadas.length} / 10</span>
             Facturas seleccionadas
           </div>
-          <button onClick={handleDescargaMasiva} disabled={creandoZip} className="bg-green-500 hover:bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-colors disabled:opacity-50">
+          <button onClick={handleDescargaMasiva} disabled={creandoZip}
+            className="bg-green-500 hover:bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-colors disabled:opacity-50">
             {creandoZip ? <Loader2 className="w-5 h-5 animate-spin" /> : <Archive className="w-5 h-5" />}
             {creandoZip ? 'Comprimiendo ZIP...' : 'Descargar ZIP'}
           </button>
           <button onClick={() => setSeleccionadas([])} className="text-slate-400 hover:text-white p-2"><X className="w-5 h-5" /></button>
         </div>
       )}
-
     </div>
   );
 }
