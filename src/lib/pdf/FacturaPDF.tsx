@@ -1,15 +1,8 @@
 import React from 'react';
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
 
-const chunkString = (str?: string) => {
-  if (!str) return '';
-  return str.match(/.{1,70}/g)?.join('\u200B') || str;
-};
-
-// ─── Estilos ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   page: { fontSize: 10, padding: 36, fontFamily: 'Helvetica', color: '#1a1a1a', backgroundColor: '#ffffff' },
   watermark: { position: 'absolute', top: '38%', left: '10%', fontSize: 80, color: '#e5e7eb', opacity: 0.5, fontFamily: 'Helvetica-Bold', transform: 'rotate(-35deg)' },
@@ -37,7 +30,6 @@ const styles = StyleSheet.create({
   cPrecio: { width: '12%', textAlign: 'right' }, cImporte: { width: '12%', textAlign: 'right' },
   conceptoSub: { fontSize: 6.5, color: '#6b7280', marginTop: 2 },
   conceptoSubBold: { fontSize: 6.5, color: '#374151', fontFamily: 'Helvetica-Bold' },
-  totalesSection: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10 },
   totalesBox: { width: 200 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, borderBottomWidth: 0.5, borderBottomColor: '#e5e7eb' },
   totalLabel: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#374151' },
@@ -60,7 +52,6 @@ const styles = StyleSheet.create({
   footer: { marginTop: 10, fontSize: 7.5, color: '#9ca3af', textAlign: 'center', borderTopWidth: 0.5, borderTopColor: '#e5e7eb', paddingTop: 6 },
 });
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
 interface Concepto {
   claveProdServ: string; cantidad: number; claveUnidad: string; unidad?: string;
   descripcion: string; valorUnitario: number; importe: number; descuento?: number;
@@ -72,14 +63,8 @@ interface FacturaPDFProps {
     folio: string; serie?: string; fecha: string; estado: string; uuid?: string;
     qrCodeUrl?: string; cadenaOriginal?: string; selloCfdi?: string; selloSat?: string;
     noCertificado?: string; noCertificadoSat?: string; fechaTimbrado?: string; rfcPac?: string;
-    emisor: {
-      nombre: string; rfc: string; direccion?: string; cp?: string;
-      regimenFiscal?: string; telefono?: string;
-    };
-    receptor: {
-      nombre: string; rfc: string; direccion?: string; cp?: string;
-      usoCfdi?: string; regimenFiscal?: string;
-    };
+    emisor: { nombre: string; rfc: string; direccion?: string; cp?: string; regimenFiscal?: string; telefono?: string; };
+    receptor: { nombre: string; rfc: string; direccion?: string; cp?: string; usoCfdi?: string; regimenFiscal?: string; };
     conceptos: Concepto[];
     subtotal: number; iva: number; total: number; moneda?: string;
     formaPago?: string; metodoPago?: string; exportacion?: string; totalLetra?: string;
@@ -253,4 +238,72 @@ export const FacturaPDF: React.FC<FacturaPDFProps> = ({ factura, logoUrl }) => {
               <Text style={styles.totalValue}>{fmt(factura.subtotal)}</Text>
             </View>
             <View style={styles.totalRow}>
-              <Text style={styles.
+              <Text style={styles.totalLabel}>IVA (16%):</Text>
+              <Text style={styles.totalValue}>{fmt(factura.iva)}</Text>
+            </View>
+            <View style={styles.totalFinalRow}>
+              <Text style={styles.totalFinalLabel}>TOTAL:</Text>
+              <Text style={styles.totalFinalValue}>{fmt(factura.total)}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.divider} />
+
+        {/* Sellos digitales y QR */}
+        {(factura.selloCfdi || factura.selloSat || factura.qrCodeUrl) && (
+          <View style={styles.sellosContainer}>
+            {factura.qrCodeUrl && (
+              <View style={styles.qrBox}>
+                <Image src={factura.qrCodeUrl} style={styles.qrImage} />
+              </View>
+            )}
+            <View style={styles.sellosInfoBox}>
+              {factura.cadenaOriginal && (
+                <View style={{ marginBottom: 6 }}>
+                  <Text style={styles.sellosTitle}>Cadena Original del Complemento de Certificación Digital del SAT:</Text>
+                  <Text style={styles.sellosText}>{factura.cadenaOriginal}</Text>
+                </View>
+              )}
+              {factura.selloCfdi && (
+                <View style={{ marginBottom: 6 }}>
+                  <Text style={styles.sellosTitle}>Sello Digital del CFDI:</Text>
+                  <Text style={styles.sellosText}>{factura.selloCfdi}</Text>
+                </View>
+              )}
+              {factura.selloSat && (
+                <View style={{ marginBottom: 6 }}>
+                  <Text style={styles.sellosTitle}>Sello Digital del SAT:</Text>
+                  <Text style={styles.sellosText}>{factura.selloSat}</Text>
+                </View>
+              )}
+              {factura.noCertificadoSat && (
+                <View style={{ flexDirection: 'row', marginBottom: 2 }}>
+                  <Text style={styles.sellosTitle}>No. Certificado SAT: </Text>
+                  <Text style={styles.sellosText}>{factura.noCertificadoSat}</Text>
+                </View>
+              )}
+              {factura.rfcPac && (
+                <View style={{ flexDirection: 'row', marginBottom: 2 }}>
+                  <Text style={styles.sellosTitle}>RFC del PAC: </Text>
+                  <Text style={styles.sellosText}>{factura.rfcPac}</Text>
+                </View>
+              )}
+              {factura.fechaTimbrado && (
+                <View style={{ flexDirection: 'row' }}>
+                  <Text style={styles.sellosTitle}>Fecha de Timbrado: </Text>
+                  <Text style={styles.sellosText}>{factura.fechaTimbrado}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Footer */}
+        <Text style={styles.footer}>
+          Este documento es una representación impresa de un CFDI — Versión 4.0
+        </Text>
+      </Page>
+    </Document>
+  );
+};
