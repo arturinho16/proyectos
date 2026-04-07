@@ -1,5 +1,5 @@
 'use client';
-
+//import Link from 'next/link';
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import {
   FileText,
@@ -516,12 +516,14 @@ function ModalVistaPrevia({
   onDescargar,
   descargando,
   onTimbrar,
+  onNuevaFactura, // 
 }: {
   factura: FacturaGuardada;
   onClose: () => void;
   onDescargar: () => void;
   descargando: boolean;
   onTimbrar: (id: string) => Promise<void>;
+  onNuevaFactura?: () => void; // 
 }) {
   const [correo, setCorreo] = useState(factura.client?.email || '');
   const [enviando, setEnviando] = useState(false);
@@ -631,7 +633,7 @@ function ModalVistaPrevia({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={isTimbrado && onNuevaFactura ? onNuevaFactura : onClose}
             className="text-slate-400 hover:text-slate-600 p-3 rounded-2xl hover:bg-slate-100 transition-colors"
           >
             <X className="w-6 h-6" />
@@ -739,8 +741,8 @@ function ModalVistaPrevia({
               {msgCorreo && (
                 <p
                   className={`text-sm font-bold ${msgCorreo.startsWith('✅')
-                      ? 'text-green-600'
-                      : 'text-red-500'
+                    ? 'text-green-600'
+                    : 'text-red-500'
                     }`}
                 >
                   {msgCorreo}
@@ -757,7 +759,7 @@ function ModalVistaPrevia({
                 onClick={onClose}
                 className="flex-1 py-4 bg-white border border-slate-300 shadow-sm rounded-xl text-slate-700 hover:bg-slate-100 font-bold text-base transition-all"
               >
-                Modificar Borrador
+                Modificar Factura
               </button>
 
               <button
@@ -795,7 +797,7 @@ function ModalVistaPrevia({
               </button>
 
               <button
-                onClick={onClose}
+                onClick={onNuevaFactura || onClose}
                 className="flex-1 py-4 bg-blue-600 text-white shadow-lg shadow-blue-200 rounded-xl hover:bg-blue-700 font-bold text-base transition-all"
               >
                 Cerrar / Nueva Factura
@@ -1035,7 +1037,7 @@ function NuevaFacturaForm() {
         xmlTimbrado: dataFactura.xmlTimbrado ?? '',
       });
 
-      resetForm(String(parseInt(folio) + 1));
+      //resetForm(String(parseInt(folio) + 1));
     } catch (error) {
       alert('❌ Ocurrió un error inesperado al guardar.');
     }
@@ -1132,6 +1134,10 @@ function NuevaFacturaForm() {
         <ModalVistaPrevia
           factura={facturaGuardada}
           onClose={() => setFacturaGuardada(null)}
+          onNuevaFactura={() => {
+            setFacturaGuardada(null);
+            resetForm(String(parseInt(folio) + 1));
+          }}
           onDescargar={handleDescargarModal}
           descargando={descargando}
           onTimbrar={handleTimbrarDesdeModal}
@@ -1147,6 +1153,13 @@ function NuevaFacturaForm() {
         </Link>
         <FileText className="w-7 h-7 text-blue-600 ml-1" />
         <h1 className="text-2xl sm:text-3xl font-bold">Nueva Factura</h1>
+
+        {/* NUEVO BOTÓN DE FACTURAS */}
+        <       Link
+          href="/facturas"
+          className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 font-medium text-sm transition-colors shadow-sm"
+        >     Facturas Creadas
+        </Link>
       </div>
 
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
