@@ -180,10 +180,12 @@ const styles = StyleSheet.create({
     width: '8%',
   },
   cUnidad: {
-    width: '10%',
+    width: '12%',
+    paddingRight: 4,
   },
   cDesc: {
     flex: 1,
+    paddingRight: 4,
   },
   cPrecio: {
     width: '12%',
@@ -500,7 +502,7 @@ export const FacturaPDF: React.FC<FacturaPDFProps> = ({ factura, logoUrl }) => {
 
         <View style={styles.divider} />
 
-        <View style={styles.tableHeader}>
+        <View style={styles.tableHeader} fixed>
           <Text style={styles.cProd}>Producto</Text>
           <Text style={styles.cCant}>Cantidad</Text>
           <Text style={styles.cUnidad}>Unidad</Text>
@@ -525,10 +527,10 @@ export const FacturaPDF: React.FC<FacturaPDFProps> = ({ factura, logoUrl }) => {
             <View key={i} style={styles.tableRow}>
               <Text style={styles.cProd}>{c.claveProdServ}</Text>
               <Text style={styles.cCant}>{toNumber(c.cantidad)}</Text>
-              <Text style={styles.cUnidad}>
-                {c.claveUnidad}
-                {c.unidad ? ` - ${c.unidad}` : ''}
-              </Text>
+              <View style={styles.cUnidad}>
+                <Text>{c.claveUnidad}</Text>
+                {c.unidad && <Text style={styles.conceptoSub}>{c.unidad}</Text>}
+              </View>
 
               <View style={styles.cDesc}>
                 <Text>{c.descripcion}</Text>
