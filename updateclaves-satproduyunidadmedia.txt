@@ -1,0 +1,32 @@
+1. Consulta para lote de Claves de Productos/Servicios
+INSERT INTO "SatClaveProdServ" (id, clave, descripcion, "createdAt", activo) VALUES 
+(gen_random_uuid(), '43211508', 'Computadoras personales', NOW(), true),
+(gen_random_uuid(), '43211509', 'Tabletas (Tablets)', NOW(), true),
+(gen_random_uuid(), '43211510', 'Servidores', NOW(), true),
+(gen_random_uuid(), '43212104', 'Impresoras de inyección de tinta', NOW(), true),
+(gen_random_uuid(), '43212105', 'Impresoras láser', NOW(), true)
+-- Añade más filas aquí siguiendo exactamente el mismo formato...
+ON CONFLICT (clave) DO NOTHING;
+
+2. Consulta para lote de Claves de Unidad
+INSERT INTO "SatClaveUnidad" (id, clave, nombre, "createdAt", activo) VALUES 
+(gen_random_uuid(), 'C81', 'Radián', NOW(), true),
+(gen_random_uuid(), 'MIL', 'Millar', NOW(), true),
+(gen_random_uuid(), 'KT', 'Kit', NOW(), true),
+(gen_random_uuid(), 'E51', 'Trabajo', NOW(), true),
+(gen_random_uuid(), 'Q3', 'Comida', NOW(), true)
+-- Añade más filas aquí siguiendo exactamente el mismo formato...
+ON CONFLICT (clave) DO NOTHING;
+
+¿Cómo ejecutarlas?
+Tienes dos opciones muy sencillas:
+
+Opción A (Terminal - Como lo hicimos antes):
+
+Crea un archivo de texto llamado nuevo-lote.sql en tu proyecto.
+
+Pega ahí las consultas de arriba con todas las claves que quieras.
+
+psql -U factura -d autofacturador_db -f nuevo-lote.sql
+
+accesos a la bd : usuario bd: factura   pass: Mexico2026

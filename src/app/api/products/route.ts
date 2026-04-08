@@ -15,33 +15,35 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const data = await req.json();
+
+    // 1. Crear el producto (Con los cast a Number requeridos por Prisma)
     const product = await prisma.product.create({
       data: {
-        numeroInterno: data.numeroInterno,
+        numeroInterno: data.numeroInterno || null,
         nombre: data.nombre,
-        codigoInterno: data.codigoInterno,
-        descripcion: data.descripcion,
-        precio: data.precio,
-        ivaTasa: data.ivaTasa,
-        iepsTasa: data.iepsTasa,
+        codigoInterno: data.codigoInterno || null,
+        descripcion: data.descripcion || data.nombre, // Fallback obligatorio
+        precio: Number(data.precio),                  // Cast a Número
+        ivaTasa: Number(data.ivaTasa),                // Cast a Número
+        iepsTasa: Number(data.iepsTasa || 0),         // Cast a Número
         claveProdServ: data.claveProdServ,
-        claveUnidad: data.claveUnidad,
-        unidad: data.unidad,
-        objetoImpuesto: data.objetoImpuesto,
-        cuentaPredial: data.cuentaPredial,
-        numeroPedimento: data.numeroPedimento,
-        impuestoLocal: data.impuestoLocal,
+        claveUnidad: data.claveUnidad || 'H87',
+        unidad: data.unidad || 'Pieza',
+        objetoImpuesto: data.objetoImpuesto || '02',
+        cuentaPredial: data.cuentaPredial || null,
+        numeroPedimento: data.numeroPedimento || null,
+        impuestoLocal: data.impuestoLocal ? Number(data.impuestoLocal) : null,
       },
     });
 
-    // ─── LÓGICA DE APRENDIZAJE: GUARDAR NUEVAS CLAVES SAT ───
+    // 2. Lógica de aprendizaje: Guardar nuevas claves SAT
     if (data.claveProdServ) {
       await prisma.satClaveProdServ.upsert({
         where: { clave: data.claveProdServ },
-        update: {}, // Si ya existe, no hace nada
+        update: {},
         create: {
           clave: data.claveProdServ,
-          descripcion: data.nombre, // Usamos el nombre del producto como descripción provisional
+          descripcion: data.nombreProdServ || data.nombre, // Usamos la descripción del SAT
         }
       });
     }
@@ -59,6 +61,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(product, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Error al guardar producto:", error);
+    return NextResponse.json({ error: error.message || 'Error interno' }, { status: 500 });
   }
 }

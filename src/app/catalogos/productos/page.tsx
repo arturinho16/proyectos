@@ -14,10 +14,18 @@ export default function ProductosPage() {
   const [isUploading, setIsUploading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
-  // Paginación y búsqueda
+  // Paginación y búsqueda general
   const [q, setQ] = useState('');
   const [paginaActual, setPaginaActual] = useState(1);
-  const ITEMS_POR_PAGINA = 10;
+  const ITEMS_POR_PAGINA = 20;
+
+  // ─── ESTADOS PARA EL AUTOCOMPLETADO DEL SAT ───
+  const [claveProdServ, setClaveProdServ] = useState('');
+  const [nombreProdServ, setNombreProdServ] = useState('');
+  const [claveUnidad, setClaveUnidad] = useState('H87');
+  const [nombreUnidad, setNombreUnidad] = useState('Pieza');
+  const [sugerenciasSat, setSugerenciasSat] = useState<any[]>([]);
+  const [campoActivoSat, setCampoActivoSat] = useState<'producto' | 'unidad' | null>(null);
 
   const fetchProducts = async () => {
     const res = await fetch('/api/products');
@@ -29,6 +37,23 @@ export default function ProductosPage() {
   useEffect(() => { fetchProducts(); }, []);
   useEffect(() => { setPaginaActual(1); }, [q]);
 
+  // Función para buscar en el SAT
+  const buscarClaveSat = async (query: string, tipo: 'producto' | 'unidad') => {
+    if (query.length < 2) {
+      setSugerenciasSat([]);
+      setCampoActivoSat(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/sat/busqueda?tipo=${tipo}&q=${query}`);
+      const data = await res.json();
+      setSugerenciasSat(data);
+      setCampoActivoSat(tipo);
+    } catch (error) {
+      console.error("Error buscando clave SAT:", error);
+    }
+  };
+
   const handleDelete = async (id: string, nombre: string) => {
     if (!confirm(`¿Eliminar "${nombre}" del catálogo?`)) return;
     const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
@@ -38,20 +63,36 @@ export default function ProductosPage() {
 
   const handleEdit = (product: any) => {
     setEditingProduct(product);
-    setShowForm(true); // Forzamos mostrar el formulario
+    setClaveProdServ(product.claveProdServ || '');
+    setNombreProdServ(product.nombre || 'Producto Editado');
+    setClaveUnidad(product.claveUnidad || '');
+    setNombreUnidad(product.unidad || '');
+    setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const cancelEdit = () => {
     setEditingProduct(null);
     setShowForm(false);
+    setClaveProdServ('');
+    setNombreProdServ('');
+    setClaveUnidad('H87');
+    setNombreUnidad('Pieza');
+    setCampoActivoSat(null);
     formRef.current?.reset();
   };
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
     const formData = new FormData(e.target);
-    const data = Object.fromEntries(formData);
+    const data: any = Object.fromEntries(formData);
+
+    // Inyectar datos del estado de React que no provienen directamente de inputs simples
+    data.claveProdServ = claveProdServ;
+    data.nombreProdServ = nombreProdServ;
+    data.claveUnidad = claveUnidad;
+    data.unidad = nombreUnidad;
+
     const url = editingProduct ? `/api/products/${editingProduct.id}` : '/api/products';
     const method = editingProduct ? 'PUT' : 'POST';
 
@@ -103,7 +144,7 @@ export default function ProductosPage() {
               <Upload className="w-5 h-5" /> {isUploading ? 'Cargando...' : 'Cargar CSV'}
               <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
             </label>
-            <button onClick={() => { setEditingProduct(null); setShowForm(!showForm); formRef.current?.reset(); }} className="flex items-center gap-2 bg-blue-600 text-white font-bold px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 text-base">
+            <button onClick={() => { cancelEdit(); setShowForm(!showForm); }} className="flex items-center gap-2 bg-blue-600 text-white font-bold px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 text-base">
               {showForm && !editingProduct ? <X className="w-5 h-5" /> : <PlusCircle className="w-5 h-5" />}
               {showForm && !editingProduct ? 'Cerrar Formulario' : 'Nuevo Producto'}
             </button>
@@ -122,27 +163,115 @@ export default function ProductosPage() {
 
             <form ref={formRef} onSubmit={handleSubmit} className="space-y-6" key={editingProduct?.id || 'new'}>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-1"><label>Nombre del Producto *</label><input name="nombre" defaultValue={editingProduct?.nombre} className="w-full p-3" required /></div>
-                <div className="space-y-1"><label>Código Interno (SKU)</label><input name="codigoInterno" defaultValue={editingProduct?.codigoInterno} className="w-full p-3" /></div>
+                <div className="space-y-1"><label>Nombre del Producto *</label><input name="nombre" defaultValue={editingProduct?.nombre} className="w-full p-3 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" required /></div>
+                <div className="space-y-1"><label>Código Interno (SKU)</label><input name="codigoInterno" defaultValue={editingProduct?.codigoInterno} className="w-full p-3 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
                 <div className="space-y-1">
                   <label>Precio Unitario (Sin IVA) *</label>
-                  <div className="relative"><span className="absolute left-3 top-3 text-slate-400 font-bold">$</span><input name="precio" type="number" step="0.000001" defaultValue={editingProduct?.precio} className="w-full p-3 pl-8" required /></div>
+                  <div className="relative"><span className="absolute left-3 top-3 text-slate-400 font-bold">$</span><input name="precio" type="number" step="0.000001" defaultValue={editingProduct?.precio} className="w-full p-3 pl-8 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" required /></div>
                 </div>
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-5 bg-blue-50/50 rounded-2xl border border-blue-100">
-                <div className="space-y-1"><label className="!text-blue-800">Clave Prod/Serv SAT *</label><input name="claveProdServ" defaultValue={editingProduct?.claveProdServ} placeholder="84111506" className="w-full p-3 border-blue-300" required /></div>
-                <div className="space-y-1">
-                  <label className="!text-blue-800">Unidad de Medida *</label>
-                  <select name="unidad_combined" defaultValue={`${editingProduct?.claveUnidad || 'H87'}|${editingProduct?.unidad || 'Pieza'}`} className="w-full p-3 border-blue-300" onChange={(e) => { const [clave, nombre] = e.target.value.split('|'); (document.getElementById('claveUnidad') as HTMLInputElement).value = clave; (document.getElementById('unidad') as HTMLInputElement).value = nombre; }}>
-                    <option value="H87|Pieza">H87 - Pieza</option><option value="E48|Unidad de servicio">E48 - Unidad de servicio</option><option value="ACT|Actividad">ACT - Actividad</option><option value="KGM|Kilogramo">KGM - Kilogramo</option><option value="MTR|Metro">MTR - Metro</option><option value="XPK|Paquete">XPK - Paquete</option><option value="LTR|Litro">LTR - Litro</option>
-                  </select>
-                  <input type="hidden" name="claveUnidad" id="claveUnidad" defaultValue={editingProduct?.claveUnidad || "H87"} /><input type="hidden" name="unidad" id="unidad" defaultValue={editingProduct?.unidad || "Pieza"} />
+                {/* ─── AUTOCOMPLETADO CLAVE SAT ─── */}
+                <div className="space-y-1 relative">
+                  <label className="!text-blue-800 font-bold text-sm">Clave Prod/Serv SAT *</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={claveProdServ}
+                      onChange={(e) => {
+                        setClaveProdServ(e.target.value);
+                        buscarClaveSat(e.target.value, 'producto');
+                      }}
+                      onBlur={() => setTimeout(() => setCampoActivoSat(null), 200)}
+                      placeholder="43202009"
+                      className="w-1/3 p-3 border border-blue-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                      required
+                    />
+                    <input
+                      type="text"
+                      value={nombreProdServ}
+                      readOnly
+                      className="w-2/3 p-3 border border-blue-200 rounded-lg outline-none bg-slate-50 text-slate-500 text-sm truncate"
+                      placeholder="Descripción SAT..."
+                    />
+                  </div>
+                  {campoActivoSat === 'producto' && sugerenciasSat.length > 0 && (
+                    <ul className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
+                      {sugerenciasSat.map((sat) => (
+                        <li
+                          key={sat.clave}
+                          onClick={() => {
+                            setClaveProdServ(sat.clave);
+                            setNombreProdServ(sat.descripcion);
+                            setCampoActivoSat(null);
+                          }}
+                          className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0"
+                        >
+                          <div className="font-bold text-sm text-slate-800">{sat.clave}</div>
+                          <div className="text-xs text-slate-500 truncate">{sat.descripcion}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
-                <div className="space-y-1"><label className="!text-blue-800">Objeto Impuesto *</label><select name="objetoImpuesto" defaultValue={editingProduct?.objetoImpuesto || "02"} className="w-full p-3 border-blue-300"><option value="02">02 - Sí objeto de impuesto</option><option value="01">01 - No objeto de impuesto</option><option value="03">03 - Sí objeto no obligado</option></select></div>
+
+                {/* ─── AUTOCOMPLETADO UNIDAD SAT ─── */}
+                <div className="space-y-1 relative">
+                  <label className="!text-blue-800 font-bold text-sm">Unidad de Medida *</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={claveUnidad}
+                      onChange={(e) => {
+                        setClaveUnidad(e.target.value);
+                        buscarClaveSat(e.target.value, 'unidad');
+                      }}
+                      onBlur={() => setTimeout(() => setCampoActivoSat(null), 200)}
+                      placeholder="H87"
+                      className="w-1/3 p-3 border border-blue-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-mono uppercase"
+                      required
+                    />
+                    <input
+                      type="text"
+                      value={nombreUnidad}
+                      readOnly
+                      className="w-2/3 p-3 border border-blue-200 rounded-lg outline-none bg-slate-50 text-slate-500 text-sm truncate"
+                    />
+                  </div>
+                  {campoActivoSat === 'unidad' && sugerenciasSat.length > 0 && (
+                    <ul className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
+                      {sugerenciasSat.map((sat) => (
+                        <li
+                          key={sat.clave}
+                          onClick={() => {
+                            setClaveUnidad(sat.clave);
+                            setNombreUnidad(sat.nombre);
+                            setCampoActivoSat(null);
+                          }}
+                          className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0"
+                        >
+                          <div className="font-bold text-sm text-slate-800">{sat.clave}</div>
+                          <div className="text-xs text-slate-500 truncate">{sat.nombre}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="!text-blue-800 font-bold text-sm">Objeto Impuesto *</label>
+                  <select name="objetoImpuesto" defaultValue={editingProduct?.objetoImpuesto || "02"} className="w-full p-3 border border-blue-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="02">02 - Sí objeto de impuesto</option>
+                    <option value="01">01 - No objeto de impuesto</option>
+                    <option value="03">03 - Sí objeto no obligado</option>
+                  </select>
+                </div>
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-1"><label>Tasa IVA *</label><select name="ivaTasa" defaultValue={editingProduct?.ivaTasa || "0.16"} className="w-full p-3"><option value="0.16">IVA 16%</option><option value="0.08">IVA 8% (Frontera)</option><option value="0.00">IVA 0%</option><option value="0.00">Exento</option></select></div>
-                <div className="space-y-1"><label>Tasa IEPS (Opcional)</label><input name="iepsTasa" type="number" step="0.01" defaultValue={editingProduct?.iepsTasa || "0.00"} className="w-full p-3" /></div>
+                <div className="space-y-1"><label>Tasa IVA *</label><select name="ivaTasa" defaultValue={editingProduct?.ivaTasa || "0.16"} className="w-full p-3 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"><option value="0.16">IVA 16%</option><option value="0.08">IVA 8% (Frontera)</option><option value="0.00">IVA 0%</option><option value="0.00">Exento</option></select></div>
+                <div className="space-y-1"><label>Tasa IEPS (Opcional)</label><input name="iepsTasa" type="number" step="0.01" defaultValue={editingProduct?.iepsTasa || "0.00"} className="w-full p-3 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
                 <div className="flex items-end gap-3">
                   <button type="button" onClick={cancelEdit} className="w-1/3 text-slate-600 font-bold py-3 rounded-xl border-2 border-slate-300 hover:bg-slate-100 text-base">Cancelar</button>
                   <button type="submit" className={`w-2/3 text-white font-bold py-3 rounded-xl transition-all shadow-lg text-base ${editingProduct ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-200' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'}`}>{editingProduct ? 'Actualizar Producto' : 'Guardar Producto'}</button>

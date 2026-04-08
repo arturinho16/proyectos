@@ -1,5 +1,4 @@
 'use client';
-//import Link from 'next/link';
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import {
   FileText,
@@ -12,6 +11,8 @@ import {
   Loader2,
   ArrowLeft,
   CheckCircle,
+  FileCode,
+  Receipt,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -516,14 +517,14 @@ function ModalVistaPrevia({
   onDescargar,
   descargando,
   onTimbrar,
-  onNuevaFactura, // 
+  onNuevaFactura,
 }: {
   factura: FacturaGuardada;
   onClose: () => void;
   onDescargar: () => void;
   descargando: boolean;
   onTimbrar: (id: string) => Promise<void>;
-  onNuevaFactura?: () => void; // 
+  onNuevaFactura?: () => void;
 }) {
   const [correo, setCorreo] = useState(factura.client?.email || '');
   const [enviando, setEnviando] = useState(false);
@@ -546,6 +547,22 @@ function ModalVistaPrevia({
     setTimbrando(true);
     await onTimbrar(factura.id);
     setTimbrando(false);
+  };
+
+  const handleDescargarXML = () => {
+    if (!factura.xmlTimbrado) {
+      alert('El XML no está disponible aún.');
+      return;
+    }
+    const blob = new Blob([factura.xmlTimbrado], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Factura-${factura.serie}${factura.folio}.xml`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleEnviar = async () => {
@@ -780,18 +797,24 @@ function ModalVistaPrevia({
           ) : (
             <>
               <button
+                onClick={handleDescargarXML}
+                className="flex-1 flex items-center justify-center gap-2 py-4 bg-white border border-slate-300 shadow-sm rounded-xl text-slate-700 hover:bg-slate-100 font-bold text-base transition-all"
+              >
+                <FileCode className="w-5 h-5" /> XML
+              </button>
+
+              <button
                 onClick={onDescargar}
                 disabled={descargando}
                 className="flex-1 flex items-center justify-center gap-2 py-4 bg-white border border-slate-300 shadow-sm rounded-xl text-slate-700 hover:bg-slate-100 font-bold text-base disabled:opacity-50 transition-all"
               >
                 {descargando ? (
                   <>
-                    <Loader2 className="w-5 h-5 animate-spin" /> Generando
-                    PDF...
+                    <Loader2 className="w-5 h-5 animate-spin" /> PDF...
                   </>
                 ) : (
                   <>
-                    <Download className="w-5 h-5" /> Descargar PDF
+                    <Download className="w-5 h-5" /> PDF
                   </>
                 )}
               </button>
@@ -800,7 +823,7 @@ function ModalVistaPrevia({
                 onClick={onNuevaFactura || onClose}
                 className="flex-1 py-4 bg-blue-600 text-white shadow-lg shadow-blue-200 rounded-xl hover:bg-blue-700 font-bold text-base transition-all"
               >
-                Cerrar / Nueva Factura
+                Cerrar
               </button>
             </>
           )}
@@ -839,6 +862,27 @@ function NuevaFacturaForm() {
   const [notas, setNotas] = useState('');
   const [retencionIVAPct, setRetencionIVAPct] = useState(0);
   const [retencionISRPct, setRetencionISRPct] = useState(0);
+
+  // NUEVOS ESTADOS PARA AUTOCOMPLETADO SAT
+  const [sugerenciasSat, setSugerenciasSat] = useState<any[]>([]);
+  const [campoActivoSat, setCampoActivoSat] = useState<{ index: number, tipo: 'producto' | 'unidad' } | null>(null);
+
+  // NUEVA FUNCIÓN DE BÚSQUEDA SAT
+  const buscarClaveSat = async (query: string, tipo: 'producto' | 'unidad', index: number) => {
+    if (query.length < 2) {
+      setSugerenciasSat([]);
+      setCampoActivoSat(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/sat/busqueda?tipo=${tipo}&q=${query}`);
+      const data = await res.json();
+      setSugerenciasSat(data);
+      setCampoActivoSat({ index, tipo });
+    } catch (error) {
+      console.error("Error buscando clave SAT:", error);
+    }
+  };
 
   useEffect(() => {
     fetch('/api/clients')
@@ -1037,7 +1081,6 @@ function NuevaFacturaForm() {
         xmlTimbrado: dataFactura.xmlTimbrado ?? '',
       });
 
-      //resetForm(String(parseInt(folio) + 1));
     } catch (error) {
       alert('❌ Ocurrió un error inesperado al guardar.');
     }
@@ -1144,22 +1187,26 @@ function NuevaFacturaForm() {
         />
       )}
 
-      <div className="flex items-center gap-3 mb-2 flex-wrap">
-        <Link
-          href="/"
-          className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 font-bold text-sm transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" /> Panel
-        </Link>
-        <FileText className="w-7 h-7 text-blue-600 ml-1" />
-        <h1 className="text-2xl sm:text-3xl font-bold">Nueva Factura</h1>
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/"
+            className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 font-bold transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" /> Panel
+          </Link>
+          <FileText className="w-8 h-8 text-blue-600 ml-2" />
+          <h1 className="text-3xl font-bold">Nueva Factura</h1>
+        </div>
 
-        {/* NUEVO BOTÓN DE FACTURAS */}
-        <       Link
-          href="/facturas"
-          className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 font-medium text-sm transition-colors shadow-sm"
-        >     Facturas Creadas
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/facturas"
+            className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition-all font-bold text-base shadow-lg shadow-indigo-100"
+          >
+            <Receipt className="w-5 h-5" /> Facturas
+          </Link>
+        </div>
       </div>
 
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -1422,22 +1469,77 @@ function NuevaFacturaForm() {
 
                 {c.productoId && (
                   <div className="grid grid-cols-2 md:grid-cols-6 gap-3 pt-2 border-t border-slate-200">
-                    <div className="space-y-1">
+                    <div className="space-y-1 relative">
                       <label className="text-xs font-bold uppercase text-slate-400">
                         Clave SAT
                       </label>
-                      <div className="text-xs font-mono bg-slate-100 p-2 rounded-lg">
-                        {c.claveProdServ}
-                      </div>
+                      <input
+                        type="text"
+                        value={c.claveProdServ}
+                        onChange={e => {
+                          handleConceptoField(i, 'claveProdServ', e.target.value);
+                          buscarClaveSat(e.target.value, 'producto', i);
+                        }}
+                        onBlur={() => setTimeout(() => setCampoActivoSat(null), 200)}
+                        className="w-full text-xs font-mono bg-white border border-slate-200 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="Ej. 43202009"
+                      />
+                      {campoActivoSat?.index === i && campoActivoSat?.tipo === 'producto' && sugerenciasSat.length > 0 && (
+                        <ul className="absolute z-50 w-64 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
+                          {sugerenciasSat.map((sat) => (
+                            <li
+                              key={sat.clave}
+                              onClick={() => {
+                                handleConceptoField(i, 'claveProdServ', sat.clave);
+                                if (!c.descripcion) {
+                                  handleConceptoField(i, 'descripcion', sat.descripcion);
+                                }
+                                setCampoActivoSat(null);
+                              }}
+                              className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0"
+                            >
+                              <div className="font-bold text-sm text-slate-800">{sat.clave}</div>
+                              <div className="text-xs text-slate-500 truncate">{sat.descripcion}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
 
-                    <div className="space-y-1">
+                    <div className="space-y-1 relative">
                       <label className="text-xs font-bold uppercase text-slate-400">
                         Unidad
                       </label>
-                      <div className="text-xs font-mono bg-slate-100 p-2 rounded-lg">
-                        {c.claveUnidad} - {c.unidad}
-                      </div>
+                      <input
+                        type="text"
+                        value={c.claveUnidad}
+                        onChange={e => {
+                          handleConceptoField(i, 'claveUnidad', e.target.value);
+                          buscarClaveSat(e.target.value, 'unidad', i);
+                        }}
+                        onBlur={() => setTimeout(() => setCampoActivoSat(null), 200)}
+                        className="w-full text-xs font-mono bg-white border border-slate-200 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                        placeholder="Ej. H87"
+                      />
+                      <div className="text-[10px] text-slate-400 truncate mt-0.5" title={c.unidad}>{c.unidad || 'Sin unidad'}</div>
+                      {campoActivoSat?.index === i && campoActivoSat?.tipo === 'unidad' && sugerenciasSat.length > 0 && (
+                        <ul className="absolute z-50 w-64 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto left-0">
+                          {sugerenciasSat.map((sat) => (
+                            <li
+                              key={sat.clave}
+                              onClick={() => {
+                                handleConceptoField(i, 'claveUnidad', sat.clave);
+                                handleConceptoField(i, 'unidad', sat.nombre);
+                                setCampoActivoSat(null);
+                              }}
+                              className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0"
+                            >
+                              <div className="font-bold text-sm text-slate-800">{sat.clave}</div>
+                              <div className="text-xs text-slate-500 truncate">{sat.nombre}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
 
                     <div className="space-y-1">

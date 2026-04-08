@@ -18,6 +18,7 @@ import {
   CheckSquare,
   Copy,
   Check,
+  FileCode,
 } from 'lucide-react';
 import Link from 'next/link';
 import JSZip from 'jszip';
@@ -575,6 +576,34 @@ export default function FacturasPage() {
     .filter((f) => f.estado !== 'CANCELADO')
     .reduce((acc, f) => acc + Number(f.total), 0);
 
+  const handleSelectAll = () => {
+    const idsVisibles = facturasPaginadas.map(f => f.id);
+    const todosSeleccionados = idsVisibles.length > 0 && idsVisibles.every(id => seleccionadas.includes(id));
+
+    if (todosSeleccionados) {
+      // Si ya están todos seleccionados, los deseleccionamos
+      setSeleccionadas(seleccionadas.filter(id => !idsVisibles.includes(id)));
+    } else {
+      // Si no, seleccionamos los visibles respetando el límite de 10
+      let nuevosSeleccionados = [...seleccionadas];
+      let agregados = 0;
+
+      for (const id of idsVisibles) {
+        if (!nuevosSeleccionados.includes(id)) {
+          if (nuevosSeleccionados.length >= 10) break; // Límite de 10
+          nuevosSeleccionados.push(id);
+          agregados++;
+        }
+      }
+
+      if (agregados > 0 && nuevosSeleccionados.length === 10 && idsVisibles.length > agregados) {
+        alert('Se alcanzó el límite de 10 facturas seleccionadas.');
+      }
+
+      setSeleccionadas(nuevosSeleccionados);
+    }
+  };
+
   const toggleSeleccion = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
 
@@ -596,7 +625,7 @@ export default function FacturasPage() {
 
     try {
       const zip = new JSZip();
-      const folderPDFs = zip.folder('Facturas_PDF');
+      const folderCFDI = zip.folder('Facturas_CFDI');
       const { pdf } = await import('@react-pdf/renderer');
       const { FacturaPDF } = await import('@/lib/pdf/FacturaPDF');
       const React = (await import('react')).default;
@@ -613,7 +642,12 @@ export default function FacturasPage() {
           })
         ).toBlob();
 
-        folderPDFs?.file(`${f.serie}-${f.folio}_${f.client.rfc}.pdf`, blob);
+        folderCFDI?.file(`${f.serie}-${f.folio}_${f.client.rfc}.pdf`, blob);
+
+        // Incluir también el XML si existe
+        if (f.xmlTimbrado) {
+          folderCFDI?.file(`${f.serie}-${f.folio}_${f.client.rfc}.xml`, f.xmlTimbrado);
+        }
       }
 
       const zipBlob = await zip.generateAsync({ type: 'blob' });
@@ -660,6 +694,24 @@ export default function FacturasPage() {
     } finally {
       setDescargando(null);
     }
+  };
+
+  // ─── NUEVA FUNCIÓN: Descargar XML ───
+  const handleDescargarXML = (f: Factura, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!f.xmlTimbrado) {
+      alert('El archivo XML no está disponible para esta factura.');
+      return;
+    }
+    const blob = new Blob([f.xmlTimbrado], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Factura-${f.serie}${f.folio}.xml`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleTimbrar = async (f: Factura, e: React.MouseEvent) => {
@@ -887,7 +939,22 @@ export default function FacturasPage() {
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
                   <th className="px-4 py-4 w-12 text-center">
-                    <CheckSquare className="w-5 h-5 text-slate-400 mx-auto" />
+                    <button
+                      onClick={handleSelectAll}
+                      title="Seleccionar todo en esta página"
+                      className="group p-1 outline-none"
+                    >
+                      <div
+                        className={`w-5 h-5 border-2 rounded mx-auto flex items-center justify-center transition-colors ${facturasPaginadas.length > 0 && facturasPaginadas.every((f) => seleccionadas.includes(f.id))
+                            ? 'bg-blue-600 border-blue-600'
+                            : 'border-slate-300 group-hover:border-blue-400'
+                          }`}
+                      >
+                        {facturasPaginadas.length > 0 && facturasPaginadas.every((f) => seleccionadas.includes(f.id)) && (
+                          <Check className="w-3 h-3 text-white" strokeWidth={3} />
+                        )}
+                      </div>
+                    </button>
                   </th>
                   {[
                     'Folio',
@@ -936,8 +1003,8 @@ export default function FacturasPage() {
                         >
                           <div
                             className={`w-5 h-5 border-2 rounded mx-auto flex items-center justify-center transition-colors ${seleccionadas.includes(f.id)
-                                ? 'bg-blue-600 border-blue-600'
-                                : 'border-slate-300'
+                              ? 'bg-blue-600 border-blue-600'
+                              : 'border-slate-300'
                               }`}
                           >
                             {seleccionadas.includes(f.id) && (
@@ -1014,6 +1081,17 @@ export default function FacturasPage() {
                                 <Download className="w-5 h-5" />
                               )}
                             </button>
+
+                            {/* NUEVO BOTÓN: Descargar XML (Sólo si existe el XML) */}
+                            {f.xmlTimbrado && (
+                              <button
+                                title="Descargar XML"
+                                onClick={(e) => handleDescargarXML(f, e)}
+                                className="p-2 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+                              >
+                                <FileCode className="w-5 h-5" />
+                              </button>
+                            )}
 
                             <button
                               title="Enviar por correo"
