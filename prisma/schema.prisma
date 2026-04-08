@@ -262,3 +262,42 @@ model ConceptoCotizacion {
 
   createdAt       DateTime @default(now())
 }
+// login
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String   // Hash de bcrypt
+  nombre    String
+  rol       String   @default("ADMIN")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LoginAttempt {
+  id        String   @id @default(uuid())
+  email     String
+  ip        String?
+  success   Boolean
+  createdAt DateTime @default(now())
+}
+
+// ==========================================
+// 7. Catálogos del SAT (Autocompletado)
+// ==========================================
+model SatClaveProdServ {
+  id          String   @id @default(uuid())
+  clave       String   @unique // Ej. "43202009"
+  descripcion String   // Ej. "Discos duros"
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+model SatClaveUnidad {
+  id          String   @id @default(uuid())
+  clave       String   @unique // Ej. "H87"
+  nombre      String   // Ej. "Pieza"
+  descripcion String?  // Descripción extendida opcional
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}

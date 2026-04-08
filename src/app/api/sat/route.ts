@@ -21,8 +21,8 @@ export async function GET(req: NextRequest) {
         take: 20 // Límite para autocompletado rápido
       });
       return NextResponse.json(resultados);
-    }
-
+    } 
+    
     if (tipo === 'unidad') {
       const resultados = await prisma.satClaveUnidad.findMany({
         where: {

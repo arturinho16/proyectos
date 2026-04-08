@@ -3,15 +3,17 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import {
   Users, Package, FileText, BarChart3, PlusCircle, Receipt,
   FileCheck, Menu, X, Globe, Calendar, PieChart as PieChartIcon,
-  TrendingUp, LayoutPanelLeft
+  TrendingUp, LayoutPanelLeft, LogOut
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
   Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line
 } from 'recharts';
+import { useInactivityTimeout } from '@/hooks/useInactivityTimeout';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────
 interface ResumenMensual {
@@ -40,6 +42,11 @@ const COLORES_ESTADO = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
+
+  // Hook de inactividad (15 minutos)
+  useInactivityTimeout(15);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -64,22 +71,21 @@ export default function DashboardPage() {
     async function cargarResumen() {
       setLoading(true);
       try {
-        // Calcular fechas inicio y fin del mes seleccionado
         const desde = new Date(anioActual, mesSeleccionado, 1).toISOString();
         const hasta = new Date(anioActual, mesSeleccionado + 1, 0, 23, 59, 59).toISOString();
 
         const res = await fetch(`/api/facturas?desde=${desde}&hasta=${hasta}`);
         const facturas = await res.json();
 
-        // 1. Clasificación de estados
+        // Clasificación de estados
         const timbradas = facturas.filter((f: any) => f.estado === 'TIMBRADO' || f.estado === 'ENVIADA');
         const noTimbradas = facturas.filter((f: any) => f.estado === 'BORRADOR');
         const canceladas = facturas.filter((f: any) => f.estado === 'CANCELADO' || f.estado === 'CANCELADA');
 
-        // 2. Dinero Total Timbrado
+        // Dinero Total Timbrado
         const dineroTimbrado = timbradas.reduce((sum: number, f: any) => sum + parseFloat(f.total || '0'), 0);
 
-        // 3. Cliente con más facturas (Solo tomamos en cuenta las válidas/timbradas)
+        // Cliente con más facturas válidas
         const conteoClientes: Record<string, number> = {};
         timbradas.forEach((f: any) => {
           const nombre = f.client?.nombreRazonSocial || 'Desconocido';
@@ -95,7 +101,6 @@ export default function DashboardPage() {
           }
         }
 
-        // Si el nombre es muy largo, lo cortamos para que no rompa el diseño
         if (topCliente.length > 20) topCliente = topCliente.substring(0, 20) + '...';
 
         setResumen({
@@ -106,14 +111,12 @@ export default function DashboardPage() {
           topCliente: maxFacturas > 0 ? topCliente : 'Sin datos',
         });
 
-        // 4. Preparar datos para Gráfico de Estados
         setDatosEstado([
           { name: 'Timbradas', cantidad: timbradas.length, fill: COLORES_ESTADO.Timbradas },
           { name: 'No Timbradas', cantidad: noTimbradas.length, fill: COLORES_ESTADO.Borradores },
           { name: 'Canceladas', cantidad: canceladas.length, fill: COLORES_ESTADO.Canceladas },
         ]);
 
-        // 5. Preparar datos para Gráfico de Líneas (Dinero por día)
         const diasDelMes = new Date(anioActual, mesSeleccionado + 1, 0).getDate();
         const diario: DatosDiarios[] = Array.from({ length: diasDelMes }, (_, i) => ({
           dia: `${i + 1}`,
@@ -142,6 +145,16 @@ export default function DashboardPage() {
 
   const formatMXN = (n: number) => n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 
+  // Función de Logout (ahora sí, correctamente dentro del componente)
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      router.push('/login');
+    } catch (error) {
+      console.error("Error al cerrar sesión", error);
+    }
+  };
+
   const kpis = [
     { label: 'Timbradas Emitidas', value: loading ? '…' : String(resumen.facturasTimbradas), color: 'text-green-600' },
     { label: 'Dinero Timbrado', value: loading ? '…' : formatMXN(resumen.dineroTimbrado), color: 'text-blue-700' },
@@ -169,6 +182,12 @@ export default function DashboardPage() {
             <Link href="/facturas/nueva" className="hidden sm:flex items-center gap-2 bg-white text-blue-700 font-bold px-4 py-2.5 rounded-xl hover:bg-blue-50 transition-all text-sm shadow">
               <PlusCircle className="w-4 h-4" /> Nueva Factura
             </Link>
+            <button
+              onClick={handleLogout}
+              className="hidden sm:flex items-center gap-2 bg-red-500 text-white font-bold px-4 py-2.5 rounded-xl hover:bg-red-600 transition-all text-sm shadow ml-2"
+            >
+              <LogOut className="w-4 h-4" /> Salir
+            </button>
             <button onClick={() => setMenuOpen(!menuOpen)} className="sm:hidden p-2 rounded-xl bg-white/20 text-white hover:bg-white/30 transition-colors">
               {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
@@ -218,6 +237,12 @@ export default function DashboardPage() {
               <Link href="/cotizaciones" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 px-5 py-4 text-blue-100 hover:bg-white/10 font-medium border-b border-blue-500/30">
                 <FileCheck className="w-5 h-5" /> Cotizaciones
               </Link>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-3 px-5 py-4 text-red-300 hover:bg-white/10 font-medium border-b border-blue-500/30 text-left w-full"
+              >
+                <LogOut className="w-5 h-5" /> Cerrar Sesión
+              </button>
             </nav>
           </div>
         )}
