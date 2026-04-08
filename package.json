@@ -27,6 +27,7 @@
     "qrcode": "^1.5.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "recharts": "^3.8.1",
     "soap": "^1.8.0",
     "xmlbuilder2": "^4.0.3",
     "xslt-processor": "^5.0.7"

@@ -3,52 +3,133 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Users, Package, FileText, BarChart3, PlusCircle, Receipt, FileCheck, Menu, X, Globe } from 'lucide-react';
+import {
+  Users, Package, FileText, BarChart3, PlusCircle, Receipt,
+  FileCheck, Menu, X, Globe, Calendar, PieChart as PieChartIcon,
+  TrendingUp, LayoutPanelLeft
+} from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
+  Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line
+} from 'recharts';
 
+// ─── Interfaces ───────────────────────────────────────────────────────────
 interface ResumenMensual {
-  facturasEmitidas: number;
-  totalFacturado: number;
-  clientesActivos: number;
-  pendientesPago: number;
+  facturasTimbradas: number;
+  facturasNoTimbradas: number;
+  facturasCanceladas: number;
+  dineroTimbrado: number;
+  topCliente: string;
 }
+
+interface DatosDiarios {
+  dia: string;
+  monto: number;
+  cantidad: number;
+}
+
+const MESES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+];
+
+const COLORES_ESTADO = {
+  Timbradas: '#16a34a', // Verde
+  Borradores: '#d97706', // Ámbar
+  Canceladas: '#dc2626'  // Rojo
+};
 
 export default function DashboardPage() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [resumen, setResumen] = useState<ResumenMensual>({
-    facturasEmitidas: 0,
-    totalFacturado: 0,
-    clientesActivos: 0,
-    pendientesPago: 0,
-  });
   const [loading, setLoading] = useState(true);
+
+  // Controles del Dashboard
+  const [mesSeleccionado, setMesSeleccionado] = useState(new Date().getMonth());
+  const [anioActual] = useState(new Date().getFullYear());
+  const [vistaGrafico, setVistaGrafico] = useState<'barras' | 'pastel' | 'lineas'>('barras');
+
+  // Datos calculados
+  const [resumen, setResumen] = useState<ResumenMensual>({
+    facturasTimbradas: 0,
+    facturasNoTimbradas: 0,
+    facturasCanceladas: 0,
+    dineroTimbrado: 0,
+    topCliente: '-',
+  });
+
+  const [datosEstado, setDatosEstado] = useState<any[]>([]);
+  const [datosDiarios, setDatosDiarios] = useState<DatosDiarios[]>([]);
 
   useEffect(() => {
     async function cargarResumen() {
+      setLoading(true);
       try {
-        const ahora = new Date();
-        const desde = new Date(ahora.getFullYear(), ahora.getMonth(), 1).toISOString();
-        const hasta = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0, 23, 59, 59).toISOString();
+        // Calcular fechas inicio y fin del mes seleccionado
+        const desde = new Date(anioActual, mesSeleccionado, 1).toISOString();
+        const hasta = new Date(anioActual, mesSeleccionado + 1, 0, 23, 59, 59).toISOString();
 
-        const [facturasRes, clientesRes] = await Promise.all([
-          fetch(`/api/facturas?desde=${desde}&hasta=${hasta}`),
-          fetch('/api/clients'),
-        ]);
+        const res = await fetch(`/api/facturas?desde=${desde}&hasta=${hasta}`);
+        const facturas = await res.json();
 
-        const facturas = await facturasRes.json();
-        const clientes = await clientesRes.json();
+        // 1. Clasificación de estados
+        const timbradas = facturas.filter((f: any) => f.estado === 'TIMBRADO' || f.estado === 'ENVIADA');
+        const noTimbradas = facturas.filter((f: any) => f.estado === 'BORRADOR');
+        const canceladas = facturas.filter((f: any) => f.estado === 'CANCELADO' || f.estado === 'CANCELADA');
 
-        const emitidas = facturas.filter((f: any) => f.estado !== 'CANCELADA');
-        const totalFacturado = emitidas.reduce((sum: number, f: any) => sum + parseFloat(f.total || '0'), 0);
-        const pendientesPago = facturas.filter((f: any) =>
-          f.estado === 'BORRADOR' || f.estado === 'ENVIADA'
-        ).length;
+        // 2. Dinero Total Timbrado
+        const dineroTimbrado = timbradas.reduce((sum: number, f: any) => sum + parseFloat(f.total || '0'), 0);
+
+        // 3. Cliente con más facturas (Solo tomamos en cuenta las válidas/timbradas)
+        const conteoClientes: Record<string, number> = {};
+        timbradas.forEach((f: any) => {
+          const nombre = f.client?.nombreRazonSocial || 'Desconocido';
+          conteoClientes[nombre] = (conteoClientes[nombre] || 0) + 1;
+        });
+
+        let topCliente = '-';
+        let maxFacturas = 0;
+        for (const [nombre, conteo] of Object.entries(conteoClientes)) {
+          if (conteo > maxFacturas) {
+            maxFacturas = conteo;
+            topCliente = nombre;
+          }
+        }
+
+        // Si el nombre es muy largo, lo cortamos para que no rompa el diseño
+        if (topCliente.length > 20) topCliente = topCliente.substring(0, 20) + '...';
 
         setResumen({
-          facturasEmitidas: emitidas.length,
-          totalFacturado,
-          clientesActivos: Array.isArray(clientes) ? clientes.length : 0,
-          pendientesPago,
+          facturasTimbradas: timbradas.length,
+          facturasNoTimbradas: noTimbradas.length,
+          facturasCanceladas: canceladas.length,
+          dineroTimbrado,
+          topCliente: maxFacturas > 0 ? topCliente : 'Sin datos',
         });
+
+        // 4. Preparar datos para Gráfico de Estados
+        setDatosEstado([
+          { name: 'Timbradas', cantidad: timbradas.length, fill: COLORES_ESTADO.Timbradas },
+          { name: 'No Timbradas', cantidad: noTimbradas.length, fill: COLORES_ESTADO.Borradores },
+          { name: 'Canceladas', cantidad: canceladas.length, fill: COLORES_ESTADO.Canceladas },
+        ]);
+
+        // 5. Preparar datos para Gráfico de Líneas (Dinero por día)
+        const diasDelMes = new Date(anioActual, mesSeleccionado + 1, 0).getDate();
+        const diario: DatosDiarios[] = Array.from({ length: diasDelMes }, (_, i) => ({
+          dia: `${i + 1}`,
+          monto: 0,
+          cantidad: 0
+        }));
+
+        timbradas.forEach((f: any) => {
+          const dia = new Date(f.fecha).getDate();
+          if (diario[dia - 1]) {
+            diario[dia - 1].monto += parseFloat(f.total || '0');
+            diario[dia - 1].cantidad += 1;
+          }
+        });
+        setDatosDiarios(diario);
+
       } catch (err) {
         console.error('Error cargando resumen:', err);
       } finally {
@@ -57,15 +138,16 @@ export default function DashboardPage() {
     }
 
     cargarResumen();
-  }, []);
+  }, [mesSeleccionado, anioActual]);
 
   const formatMXN = (n: number) => n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 
   const kpis = [
-    { label: 'Facturas Emitidas', value: loading ? '…' : String(resumen.facturasEmitidas), color: 'text-blue-700' },
-    { label: 'Total Facturado', value: loading ? '…' : formatMXN(resumen.totalFacturado), color: 'text-green-600' },
-    { label: 'Clientes Activos', value: loading ? '…' : String(resumen.clientesActivos), color: 'text-slate-800' },
-    { label: 'Pendientes de Pago', value: loading ? '…' : String(resumen.pendientesPago), color: 'text-orange-500' },
+    { label: 'Timbradas Emitidas', value: loading ? '…' : String(resumen.facturasTimbradas), color: 'text-green-600' },
+    { label: 'Dinero Timbrado', value: loading ? '…' : formatMXN(resumen.dineroTimbrado), color: 'text-blue-700' },
+    { label: 'NO Timbradas', value: loading ? '…' : String(resumen.facturasNoTimbradas), color: 'text-amber-500' },
+    { label: 'Canceladas', value: loading ? '…' : String(resumen.facturasCanceladas), color: 'text-red-500' },
+    { label: 'Cliente Frecuente', value: loading ? '…' : resumen.topCliente, color: 'text-indigo-600', isText: true },
   ];
 
   return (
@@ -108,7 +190,6 @@ export default function DashboardPage() {
             <Link href="/catalogos/productos" className="flex items-center gap-1.5 px-4 py-3 text-blue-100 hover:text-white hover:bg-white/10 text-sm font-medium transition-colors whitespace-nowrap">
               <Package className="w-4 h-4" /> Productos
             </Link>
-            {/* ENLACE ACTIVO COTIZACIONES */}
             <Link href="/cotizaciones" className="flex items-center gap-1.5 px-4 py-3 text-blue-100 hover:text-white hover:bg-white/10 text-sm font-medium transition-colors whitespace-nowrap">
               <FileCheck className="w-4 h-4" /> Cotizaciones
             </Link>
@@ -134,7 +215,6 @@ export default function DashboardPage() {
               <Link href="/catalogos/productos" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 px-5 py-4 text-blue-100 hover:bg-white/10 font-medium border-b border-blue-500/30">
                 <Package className="w-5 h-5" /> Productos
               </Link>
-              {/* ENLACE ACTIVO COTIZACIONES MÓVIL */}
               <Link href="/cotizaciones" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 px-5 py-4 text-blue-100 hover:bg-white/10 font-medium border-b border-blue-500/30">
                 <FileCheck className="w-5 h-5" /> Cotizaciones
               </Link>
@@ -144,7 +224,7 @@ export default function DashboardPage() {
       </header>
 
       {/* ── Contenido ──────────────────────────────────────────────────── */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6 sm:space-y-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6 sm:space-y-8 pb-24">
         <div>
           <h2 className="text-2xl sm:text-3xl font-bold text-slate-800">Panel de Control</h2>
           <p className="text-slate-500 mt-1 text-sm">Bienvenido al sistema de autofacturación México.</p>
@@ -179,13 +259,12 @@ export default function DashboardPage() {
             <p className="text-slate-500 text-xs sm:text-sm mt-1">Historial, descarga y envío por correo.</p>
           </Link>
 
-          {/* TARJETA COTIZACIONES ACTIVA */}
           <Link href="/cotizaciones" className="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border-l-4 border-l-slate-400 border border-slate-200 hover:shadow-md transition-all group">
             <div className="mb-4"><div className="bg-slate-50 p-2.5 rounded-xl inline-block"><FileCheck className="w-6 h-6 sm:w-8 sm:h-8 text-slate-600" /></div></div>
             <h3 className="text-lg sm:text-xl font-bold text-slate-800">Cotizaciones</h3>
             <p className="text-slate-500 text-xs sm:text-sm mt-1">Gestionar y convertir a facturas.</p>
           </Link>
-          {/* FACTURACION GLOBAL */}
+
           <Link href="/facturas/global" className="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border-l-4 border-l-indigo-500 border border-slate-200 hover:shadow-md transition-all group">
             <div className="mb-4">
               <div className="bg-indigo-50 p-2.5 rounded-xl inline-block">
@@ -193,26 +272,151 @@ export default function DashboardPage() {
               </div>
             </div>
             <h3 className="text-lg sm:text-xl font-bold text-slate-800">Factura Global</h3>
-            <               p className="text-slate-500 text-sm mt-1">Ventas al público en general del periodo.</p>
+            <p className="text-slate-500 text-sm mt-1">Ventas al público en general del periodo.</p>
           </Link>
         </div>
 
-        {/* ── Resumen Mensual ── */}
+        {/* ── Resumen Mensual con Filtro ── */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="flex items-center gap-2 px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50">
-            <BarChart3 className="w-5 h-5 text-blue-600" />
-            <h2 className="text-base sm:text-lg font-bold">Resumen Mensual</h2>
-            <span className="ml-auto text-xs text-slate-400">
-              {new Date().toLocaleString('es-MX', { month: 'long', year: 'numeric' })}
-            </span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-blue-600" />
+              <h2 className="text-lg font-bold">Resumen de Operaciones</h2>
+            </div>
+
+            {/* Filtro de Meses */}
+            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
+              <Calendar className="w-4 h-4 text-slate-500" />
+              <select
+                value={mesSeleccionado}
+                onChange={(e) => setMesSeleccionado(Number(e.target.value))}
+                className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer"
+              >
+                {MESES.map((mes, index) => (
+                  <option key={mes} value={index}>{mes} {anioActual}</option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-slate-100">
-            {kpis.map(k => (
-              <div key={k.label} className="p-4 sm:p-6">
-                <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase mb-1">{k.label}</p>
-                <p className={`text-2xl sm:text-3xl font-bold ${k.color} ${loading ? 'animate-pulse' : ''}`}>{k.value}</p>
+
+          {/* KPIs Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 divide-x divide-y lg:divide-y-0 divide-slate-100 border-b border-slate-100">
+            {kpis.map((k, idx) => (
+              <div key={idx} className="p-4 sm:p-6 flex flex-col justify-center">
+                <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase mb-1 leading-tight">{k.label}</p>
+                <p className={`${k.isText ? 'text-lg sm:text-xl' : 'text-2xl sm:text-3xl'} font-bold ${k.color} ${loading ? 'animate-pulse opacity-50' : ''} truncate`} title={String(k.value)}>
+                  {k.value}
+                </p>
               </div>
             ))}
+          </div>
+
+          {/* ── Gráficos ── */}
+          <div className="p-5 sm:p-6">
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+              <h3 className="text-base font-bold text-slate-700">Análisis Gráfico del Mes</h3>
+
+              {/* Botones para cambiar de vista */}
+              <div className="flex bg-slate-100 p-1 rounded-xl">
+                <button
+                  onClick={() => setVistaGrafico('barras')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${vistaGrafico === 'barras' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  <LayoutPanelLeft className="w-4 h-4" /> Barras
+                </button>
+                <button
+                  onClick={() => setVistaGrafico('pastel')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${vistaGrafico === 'pastel' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  <PieChartIcon className="w-4 h-4" /> Distribución
+                </button>
+                <button
+                  onClick={() => setVistaGrafico('lineas')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${vistaGrafico === 'lineas' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  <TrendingUp className="w-4 h-4" /> Tendencia
+                </button>
+              </div>
+            </div>
+
+            <div className="h-[300px] w-full">
+              {loading ? (
+                <div className="w-full h-full flex items-center justify-center bg-slate-50 rounded-xl animate-pulse">
+                  <span className="text-slate-400 font-medium">Cargando gráficos...</span>
+                </div>
+              ) : (
+                <>
+                  {/* Vista 1: Barras */}
+                  {vistaGrafico === 'barras' && (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={datosEstado} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }} dy={10} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                        <RechartsTooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        <Bar dataKey="cantidad" radius={[6, 6, 0, 0]} maxBarSize={60}>
+                          {datosEstado.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.fill} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+
+                  {/* Vista 2: Pastel / Dona */}
+                  {vistaGrafico === 'pastel' && (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={datosEstado}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={80}
+                          outerRadius={110}
+                          paddingAngle={5}
+                          dataKey="cantidad"
+                        >
+                          {datosEstado.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.fill} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        <Legend iconType="circle" wrapperStyle={{ fontSize: '14px', fontWeight: 600, color: '#475569' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  )}
+
+                  {/* Vista 3: Líneas de Tendencia Mensual */}
+                  {vistaGrafico === 'lineas' && (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={datosDiarios} margin={{ top: 20, right: 30, left: 10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="dia" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} />
+                        <YAxis
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: '#64748b', fontSize: 12 }}
+                          tickFormatter={(value) => `$${value}`}
+                        />
+                        <RechartsTooltip
+                          formatter={(value: number) => [formatMXN(value), 'Monto Timbrado']}
+                          labelFormatter={(label) => `Día ${label} de ${MESES[mesSeleccionado]}`}
+                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="monto"
+                          stroke="#2563eb"
+                          strokeWidth={4}
+                          dot={{ fill: '#2563eb', strokeWidth: 2, r: 4 }}
+                          activeDot={{ r: 6, fill: '#1d4ed8' }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
 
