@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import {
   Users, Package, FileText, BarChart3, PlusCircle, Receipt,
   FileCheck, Menu, X, Globe, Calendar, PieChart as PieChartIcon,
-  TrendingUp, LayoutPanelLeft, LogOut, Archive, Settings
+  TrendingUp, LayoutPanelLeft, LogOut, Archive, Settings, Inbox
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
@@ -316,6 +316,16 @@ export default function DashboardPage() {
             </div>
             <h3 className="text-lg sm:text-xl font-bold text-slate-800">Configuración</h3>
             <p className="text-slate-500 text-sm mt-1">Perfil fiscal, usuarios y certificados SAT.</p>
+          </Link>
+          <Link href="/facturas-recibidas" className="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border-l-4 border-l-pink-500 border border-slate-200 hover:shadow-md transition-all group">
+            <div className="mb-4">
+              <div className="bg-pink-50 p-2.5 rounded-xl inline-block">
+                <Inbox className="w-6 h-6 sm:w-8 sm:h-8 text-pink-600" />
+              </div>
+            </div>
+
+            <h3 className="text-lg sm:text-xl font-bold text-slate-800">Facturas Recibidas</h3>
+            <p className="text-slate-500 text-sm mt-1">Gastos sincronizados desde el SAT.</p>
           </Link>
 
         </div>

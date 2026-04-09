@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@nodecfdi/credentials": "^3.2.0",
+    "@nodecfdi/sat-ws-descarga-masiva": "^2.0.0",
     "@prisma/adapter-pg": "^7.4.2",
     "@prisma/client": "^7.4.1",
     "@react-pdf/renderer": "^4.3.2",

@@ -301,3 +301,17 @@ model SatClaveUnidad {
   activo      Boolean  @default(true)
   createdAt   DateTime @default(now())
 }
+model FacturaRecibida {
+  id             String   @id @default(uuid())
+  uuid           String   @unique
+  emisorRfc      String
+  emisorNombre   String
+  receptorRfc    String
+  fechaEmision   DateTime
+  total          Decimal
+  moneda         String   @default("MXN")
+  efectoCfdi     String   @default("I") // I=Ingreso, E=Egreso, etc.
+  xmlContenido   String?  // El XML original guardado
+  estadoSat      String   @default("VIGENTE") // VIGENTE o CANCELADO
+  createdAt      DateTime @default(now())
+}
