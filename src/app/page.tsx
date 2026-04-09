@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import {
   Users, Package, FileText, BarChart3, PlusCircle, Receipt,
   FileCheck, Menu, X, Globe, Calendar, PieChart as PieChartIcon,
-  TrendingUp, LayoutPanelLeft, LogOut
+  TrendingUp, LayoutPanelLeft, LogOut, Archive
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
@@ -299,6 +299,16 @@ export default function DashboardPage() {
             <h3 className="text-lg sm:text-xl font-bold text-slate-800">Factura Global</h3>
             <p className="text-slate-500 text-sm mt-1">Ventas al público en general del periodo.</p>
           </Link>
+          <Link href="/facturas/consolidado" className="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border-l-4 border-l-cyan-500 border border-slate-200 hover:shadow-md transition-all group">
+            <div className="mb-4">
+              <div className="bg-cyan-50 p-2.5 rounded-xl inline-block">
+                <Archive className="w-6 h-6 sm:w-8 sm:h-8 text-cyan-600" />
+              </div>
+            </div>
+            <h3 className="text-lg sm:text-xl font-bold text-slate-800">Consolidado Mensual</h3>
+            <p className="text-slate-500 text-sm mt-1">Cierre contable: Descarga 1 PDF global y ZIP de XMLs.</p>
+          </Link>
+
         </div>
 
         {/* ── Resumen Mensual con Filtro ── */}

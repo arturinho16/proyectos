@@ -1,3 +1,23 @@
+// funcion consolidado de facturas mensuales, ver para que no colapse el navegador
+🟢 Zona Segura y Fluida: 500 a 1,000 facturas
+En este rango, cualquier computadora de oficina promedio (con 4GB u 8GB de RAM) hará el trabajo en unos pocos minutos sin problema. El navegador utilizará entre 200MB y 500MB de memoria temporal. El usuario verá la barra de progreso avanzar rápidamente y descargará un PDF de unos 5MB a 15MB y un ZIP de unos 2MB a 5MB.
+
+🟡 Límite de Tensión (El navegador se congela intermitentemente): 2,000 a 5,000 facturas
+Aquí empezamos a jugar con fuego. Al procesar este volumen:
+
+El Recolector de Basura (Garbage Collector) de JavaScript se satura: Aunque programamos el sistema para desechar los PDFs individuales después de pegarlos al PDF maestro, JS no libera la memoria inmediatamente.
+
+pdf-lib retiene todo en RAM: Para que pdf-lib pueda exportar el PDF final (mergedPdf.save()), tiene que mantener el árbol de objetos de las 5,000 páginas vivas en la memoria RAM.
+
+Resultado: Chrome consumirá entre 1.5GB y 2.5GB de RAM solo en esa pestaña. La computadora del cliente puede encender los ventiladores al máximo y el navegador podría mostrar el mensaje "Esta página no responde, ¿deseas esperar?". Si el usuario le da "Esperar", eventualmente terminará.
+
+🔴 Límite de Colapso (Crash seguro / "Out of Memory"): 10,000+ facturas
+Si intentas procesar 10,000, 20,000 o 30,000 facturas en el navegador, el sistema va a colapsar al 100% de seguridad.
+Chrome y Edge tienen un límite por defecto de aproximadamente 2GB a 4GB de RAM máxima por pestaña (dependiendo del sistema operativo). Construir un PDF de 30,000 páginas en memoria con fuentes e imágenes embebidas, sumado a 30,000 strings de XML en un buffer de ZIP, excederá ese límite. La pestaña se pondrá en blanco y mostrará el error de "Aw, Snap!" (¡Oh, no!) o Out of Memory.
+
+
+
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
