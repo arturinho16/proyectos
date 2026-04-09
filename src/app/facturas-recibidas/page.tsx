@@ -49,18 +49,31 @@ export default function FacturasRecibidasPage() {
         try {
             const res = await fetch('/api/facturas-recibidas', { method: 'POST' });
             const data = await res.json();
-
-            // Si el servidor nos devuelve un error (como el 400 o 500), lo mostramos
             if (!res.ok) {
                 alert(`❌ Error: ${data.error}`);
                 return;
             }
-
-            // Si todo sale bien, mostramos el mensaje de éxito
             alert(`✅ ${data.mensaje}`);
             cargar();
         } catch (error) {
             alert('Error de conexión al sincronizar con el SAT.');
+        } finally {
+            setSincronizando(false);
+        }
+    };
+
+    const handleVerificarDescargas = async () => {
+        setSincronizando(true);
+        try {
+            const res = await fetch('/api/facturas-recibidas/verificar');
+            const data = await res.json();
+
+            if (!res.ok) return alert(`❌ Error: ${data.error}`);
+
+            alert(`ℹ️ ${data.mensaje}`);
+            cargar();
+        } catch (error) {
+            alert('Error al comprobar descargas.');
         } finally {
             setSincronizando(false);
         }
@@ -124,6 +137,15 @@ export default function FacturasRecibidasPage() {
                             className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition-all font-bold text-base shadow-lg shadow-indigo-100"
                         >
                             <Archive className="w-5 h-5" /> Descargar Consolidado
+                        </button>
+
+                        <button
+                            onClick={handleVerificarDescargas}
+                            disabled={sincronizando}
+                            className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-xl hover:bg-emerald-700 transition-all font-bold text-base shadow-lg shadow-emerald-100 disabled:opacity-50"
+                        >
+                            {sincronizando ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
+                            {sincronizando ? 'Consultando...' : 'Comprobar Descargas'}
                         </button>
 
                         <button

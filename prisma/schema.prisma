@@ -315,3 +315,13 @@ model FacturaRecibida {
   estadoSat      String   @default("VIGENTE") // VIGENTE o CANCELADO
   createdAt      DateTime @default(now())
 }
+model SolicitudSat {
+  id           String   @id @default(uuid())
+  requestId    String   @unique
+  fechaInicio  DateTime
+  fechaFin     DateTime
+  estado       String   @default("PENDIENTE") // PENDIENTE, COMPLETADA, RECHAZADA, ERROR
+  mensajeSat   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
