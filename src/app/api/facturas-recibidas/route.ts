@@ -17,19 +17,28 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Recibir el mes y año desde la pantalla
     const body = await req.json();
-    const { mes, anio } = body; // mes viene de 1 a 12
+    const { fechaInicio, fechaFin } = body;
 
-    if (!mes || !anio) {
-      return NextResponse.json({ error: 'Falta especificar el mes y el año.' }, { status: 400 });
+    // Aquí está la corrección: Ya validamos por fechaInicio y fechaFin
+    if (!fechaInicio || !fechaFin) {
+      return NextResponse.json({ error: 'Faltan las fechas de inicio y fin.' }, { status: 400 });
     }
 
-    // Calcular el primer y último día de ese mes
-    const start = new Date(anio, mes - 1, 1, 0, 0, 0);
-    const end = new Date(anio, mes, 0, 23, 59, 59); // El día 0 del mes siguiente es el último del actual
+    let start = new Date(`${fechaInicio}T00:00:00`);
+    let end = new Date(`${fechaFin}T23:59:59`);
+    const now = new Date();
 
-    // 2. VALIDACIÓN DE DUPLICADOS
+    // ⚠️ REGLA DEL SAT: No pedir fechas futuras. Si es futuro, lo topamos a la hora actual.
+    if (end > now) {
+      end = now;
+    }
+
+    if (start > end) {
+      return NextResponse.json({ error: 'La fecha de inicio no puede ser mayor a la fecha final.' }, { status: 400 });
+    }
+
+    // VALIDACIÓN DE DUPLICADOS EXACTOS
     const solicitudExistente = await prisma.solicitudSat.findFirst({
       where: {
         fechaInicio: start,
@@ -40,14 +49,13 @@ export async function POST(req: NextRequest) {
 
     if (solicitudExistente) {
       return NextResponse.json({
-        error: `El periodo de ${mes}/${anio} ya fue solicitado previamente. Por favor busque en sus descargas o historial.`
+        error: `Ese rango exacto de fechas ya fue solicitado. Token: ${solicitudExistente.requestId}`
       }, { status: 400 });
     }
 
-    // 3. Rutas a tus archivos FIEL
     const cerPath = path.join(process.cwd(), 'src/lib/sat/certificados/FIEL/como891216cm1.cer');
     const keyPath = path.join(process.cwd(), 'src/lib/sat/certificados/FIEL/Claveprivada_FIEL_COMO891216CM1_20260219_140155.key');
-    const passwordFiel = 'MONROY1612'; // ⚠️ PON TU CONTRASEÑA
+    const passwordFiel = 'MONROY1612';
 
     if (!fs.existsSync(cerPath) || !fs.existsSync(keyPath)) {
       return NextResponse.json({ error: `No se encontraron los archivos FIEL.` }, { status: 400 });
@@ -57,7 +65,6 @@ export async function POST(req: NextRequest) {
     const keyString = fs.readFileSync(keyPath, 'binary');
     const satService = new DescargaMasivaSAT(cerString, keyString, passwordFiel);
 
-    // 4. Formatear fechas para el SAT
     const formatToSAT = (d: Date) => {
       const pad = (n: number) => n.toString().padStart(2, '0');
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
@@ -66,10 +73,8 @@ export async function POST(req: NextRequest) {
     const strInicio = formatToSAT(start);
     const strFin = formatToSAT(end);
 
-    // 5. Solicitar al SAT
     const requestId = await satService.solicitarFacturasRecibidas(strInicio, strFin);
 
-    // 6. Guardar el ticket
     await prisma.solicitudSat.create({
       data: {
         requestId,
@@ -81,7 +86,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      mensaje: `Conexión establecida con el SAT para ${mes}/${anio}. Espere unos minutos y compruebe descargas.`
+      mensaje: `¡Petición enviada! El SAT asignó el Token: ${requestId}`
     });
 
   } catch (error: any) {
