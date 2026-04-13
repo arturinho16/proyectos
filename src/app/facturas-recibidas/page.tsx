@@ -27,6 +27,8 @@ export default function FacturasRecibidasPage() {
     const [q, setQ] = useState('');
     const [paginaActual, setPaginaActual] = useState(1);
     const ITEMS_POR_PAGINA = 10;
+    const [mesSincronizacion, setMesSincronizacion] = useState(new Date().getMonth() + 1); // 1-12
+    const [anioSincronizacion, setAnioSincronizacion] = useState(new Date().getFullYear());
 
     const cargar = useCallback(async () => {
         setLoading(true);
@@ -47,10 +49,14 @@ export default function FacturasRecibidasPage() {
     const handleSincronizar = async () => {
         setSincronizando(true);
         try {
-            const res = await fetch('/api/facturas-recibidas', { method: 'POST' });
+            const res = await fetch('/api/facturas-recibidas', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mes: mesSincronizacion, anio: anioSincronizacion })
+            });
             const data = await res.json();
             if (!res.ok) {
-                alert(`❌ Error: ${data.error}`);
+                alert(`❌ Atención: ${data.error}`);
                 return;
             }
             alert(`✅ ${data.mensaje}`);
@@ -131,30 +137,63 @@ export default function FacturasRecibidasPage() {
                         <h1 className="text-3xl font-bold">Facturas Recibidas</h1>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+
+                        {/* Selectores de Fecha */}
+                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
+                            <select
+                                value={mesSincronizacion}
+                                onChange={(e) => setMesSincronizacion(Number(e.target.value))}
+                                className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer"
+                            >
+                                <option value={1}>Enero</option>
+                                <option value={2}>Febrero</option>
+                                <option value={3}>Marzo</option>
+                                <option value={4}>Abril</option>
+                                <option value={5}>Mayo</option>
+                                <option value={6}>Junio</option>
+                                <option value={7}>Julio</option>
+                                <option value={8}>Agosto</option>
+                                <option value={9}>Septiembre</option>
+                                <option value={10}>Octubre</option>
+                                <option value={11}>Noviembre</option>
+                                <option value={12}>Diciembre</option>
+                            </select>
+                            <span className="text-slate-300">/</span>
+                            <select
+                                value={anioSincronizacion}
+                                onChange={(e) => setAnioSincronizacion(Number(e.target.value))}
+                                className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer"
+                            >
+                                <option value={2026}>2026</option>
+                                <option value={2025}>2025</option>
+                                <option value={2024}>2024</option>
+                            </select>
+                        </div>
+
                         <button
                             onClick={handleConsolidado}
-                            className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition-all font-bold text-base shadow-lg shadow-indigo-100"
+                            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 transition-all font-bold text-sm shadow-lg shadow-indigo-100"
                         >
-                            <Archive className="w-5 h-5" /> Descargar Consolidado
+                            <Archive className="w-4 h-4" /> Consolidado
                         </button>
 
                         <button
                             onClick={handleVerificarDescargas}
                             disabled={sincronizando}
-                            className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-xl hover:bg-emerald-700 transition-all font-bold text-base shadow-lg shadow-emerald-100 disabled:opacity-50"
+                            className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl hover:bg-emerald-700 transition-all font-bold text-sm shadow-lg shadow-emerald-100 disabled:opacity-50"
                         >
-                            {sincronizando ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
-                            {sincronizando ? 'Consultando...' : 'Comprobar Descargas'}
+                            {sincronizando ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                            Comprobar
                         </button>
 
                         <button
                             onClick={handleSincronizar}
                             disabled={sincronizando}
-                            className="flex items-center gap-2 bg-pink-600 text-white px-5 py-2.5 rounded-xl hover:bg-pink-700 transition-all font-bold text-base shadow-lg shadow-pink-100 disabled:opacity-50"
+                            className="flex items-center gap-2 bg-pink-600 text-white px-4 py-2 rounded-xl hover:bg-pink-700 transition-all font-bold text-sm shadow-lg shadow-pink-100 disabled:opacity-50"
                         >
-                            {sincronizando ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
-                            {sincronizando ? 'Conectando...' : 'Sincronizar SAT'}
+                            {sincronizando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Inbox className="w-4 h-4" />}
+                            Pedir al SAT
                         </button>
                     </div>
                 </div>

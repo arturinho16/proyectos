@@ -5,6 +5,24 @@ import fs from 'fs';
 import path from 'path';
 import AdmZip from 'adm-zip';
 
+// Función auxiliar para calcular el tamaño de la carpeta en Bytes
+function obtenerTamanoCarpeta(dirPath: string): number {
+    let size = 0;
+    if (fs.existsSync(dirPath)) {
+        const files = fs.readdirSync(dirPath);
+        for (const file of files) {
+            const filePath = path.join(dirPath, file);
+            const stats = fs.statSync(filePath);
+            if (stats.isDirectory()) {
+                size += obtenerTamanoCarpeta(filePath);
+            } else {
+                size += stats.size;
+            }
+        }
+    }
+    return size;
+}
+
 export async function GET(req: NextRequest) {
     try {
         const pendientes = await prisma.solicitudSat.findMany({
@@ -12,12 +30,24 @@ export async function GET(req: NextRequest) {
         });
 
         if (pendientes.length === 0) {
-            return NextResponse.json({ ok: true, mensaje: 'No hay solicitudes en proceso. Dale a Sincronizar SAT para iniciar una.' });
+            return NextResponse.json({ ok: true, mensaje: 'No hay solicitudes en proceso.' });
         }
 
+        // 1. Verificar Espacio en Disco (Límite 2GB, avisamos al llegar a 1.9GB)
+        const almacenPath = path.join(process.cwd(), 'almacen_facturas');
+        const MAX_BYTES = 1.9 * 1024 * 1024 * 1024; // 1.9 GB en bytes
+
+        const tamanoActual = obtenerTamanoCarpeta(almacenPath);
+        if (tamanoActual > MAX_BYTES) {
+            return NextResponse.json({
+                error: '⚠️ Almacenamiento casi lleno (Capacidad: 2.0 GB). Por favor, respalda tus facturas mensuales, limpia la carpeta y vuelve a intentar.'
+            }, { status: 400 });
+        }
+
+        // 2. Credenciales FIEL
         const cerPath = path.join(process.cwd(), 'src/lib/sat/certificados/FIEL/como891216cm1.cer');
         const keyPath = path.join(process.cwd(), 'src/lib/sat/certificados/FIEL/Claveprivada_FIEL_COMO891216CM1_20260219_140155.key');
-        const passwordFiel = 'MONROY1612'; // OJO AQUI VA TU CONTRASENA DE LA FIEL, ASEGURATE DE PROTEGERLA BIEN EN UN ENTORNO REAL (ej. variables de entorno, vault, etc.)
+        const passwordFiel = 'MONROY1612'; // ⚠️ PON TU CONTRASEÑA
 
         const cerString = fs.readFileSync(cerPath, 'binary');
         const keyString = fs.readFileSync(keyPath, 'binary');
@@ -69,6 +99,25 @@ export async function GET(req: NextRequest) {
                                 }
 
                                 if (uuid && emisorRfc) {
+                                    // 3. GUARDADO FÍSICO DEL XML
+                                    const fechaDoc = new Date(fechaEmision);
+                                    const anioStr = fechaDoc.getFullYear().toString();
+                                    const mesStr = (fechaDoc.getMonth() + 1).toString().padStart(2, '0');
+
+                                    // Crear carpeta ej. almacen_facturas/2026/03/
+                                    const folderDest = path.join(almacenPath, anioStr, mesStr);
+                                    if (!fs.existsSync(folderDest)) {
+                                        fs.mkdirSync(folderDest, { recursive: true });
+                                    }
+
+                                    // Escribir el archivo
+                                    const fileName = `${emisorRfc}_${uuid}.xml`;
+                                    const filePath = path.join(folderDest, fileName);
+                                    if (!fs.existsSync(filePath)) {
+                                        fs.writeFileSync(filePath, xmlContenido, 'utf8');
+                                    }
+
+                                    // 4. GUARDADO EN BASE DE DATOS
                                     await prisma.facturaRecibida.upsert({
                                         where: { uuid },
                                         update: {},
@@ -77,11 +126,11 @@ export async function GET(req: NextRequest) {
                                             emisorRfc,
                                             emisorNombre,
                                             receptorRfc: 'COMO891216CM1',
-                                            fechaEmision: new Date(fechaEmision),
+                                            fechaEmision: fechaDoc,
                                             total: parseFloat(total) || 0,
                                             moneda,
                                             efectoCfdi,
-                                            xmlContenido,
+                                            xmlContenido, // Opcional: Podrías dejar de guardarlo aquí para ahorrar BD ya que lo tienes físico
                                             estadoSat: 'VIGENTE'
                                         }
                                     });
@@ -98,15 +147,13 @@ export async function GET(req: NextRequest) {
                     procesadas++;
                 }
             } catch (err: any) {
-                // AQUÍ ESTÁ LA MAGIA: Si el SAT nos devuelve Estado 5 (Rechazada), lo manejamos pacíficamente.
                 if (err.message.includes('Estado: 5') || err.message.includes('Rechazada')) {
                     await prisma.solicitudSat.update({
                         where: { id: solicitud.id },
-                        data: { estado: 'RECHAZADA', mensajeSat: 'El SAT rechazó la solicitud (Posiblemente no hay facturas en esas fechas).' }
+                        data: { estado: 'RECHAZADA', mensajeSat: 'El SAT no devolvió facturas (No hay compras o solicitud duplicada).' }
                     });
                     rechazadas++;
                 } else {
-                    // Si es un error distinto (ej. no hay internet), sí lo lanzamos
                     throw err;
                 }
             }
@@ -114,12 +161,12 @@ export async function GET(req: NextRequest) {
 
         if (procesadas > 0 || rechazadas > 0) {
             const mensajeFinal = nuevasFacturas > 0
-                ? `¡Se descargaron ${nuevasFacturas} facturas recibidas nuevas del SAT!`
-                : `Proceso terminado. No se encontraron facturas nuevas en los últimos 5 días.`;
+                ? `¡Se descargaron y guardaron físicamente ${nuevasFacturas} facturas XML nuevas!`
+                : `Proceso terminado. El SAT no devolvió facturas (No hay compras en este periodo o la solicitud se duplicó hoy).`;
 
             return NextResponse.json({ ok: true, mensaje: mensajeFinal });
         } else {
-            return NextResponse.json({ ok: true, mensaje: '⏳ El SAT sigue armando tu archivo ZIP. Vuelve a intentar en 2 minutos.' });
+            return NextResponse.json({ ok: true, mensaje: '⏳ El SAT sigue armando tu archivo ZIP. Vuelve a intentar en unos minutos.' });
         }
 
     } catch (error: any) {
