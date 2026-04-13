@@ -87,6 +87,8 @@ interface Concepto {
   descuento?: number;
   objetoImpuesto?: string;
   ivaTasa?: number | string;
+  ivaBase?: number;      // <- AGREGA ESTO
+  ivaImporte?: number;   // <- AGREGA ESTO
   iepsImporte?: number;
   noIdentificacion?: string;
 }
@@ -201,7 +203,11 @@ export const FacturaPDF: React.FC<FacturaPDFProps> = ({ factura, logoUrl }) => {
           const tasaIva = toNumber(c.ivaTasa, 0.16);
           const importeConcepto = toNumber(c.importe);
           const valorUnitario = toNumber(c.valorUnitario);
-          const ivaImporte = c.objetoImpuesto !== '01' ? importeConcepto * tasaIva : 0;
+
+          // Magia: Si el XML trajo la base exacta la usamos, si no, usamos el importe
+          const ivaBase = c.ivaBase !== undefined ? toNumber(c.ivaBase) : importeConcepto;
+          const ivaImporte = c.ivaImporte !== undefined ? toNumber(c.ivaImporte) : (c.objetoImpuesto !== '01' ? ivaBase * tasaIva : 0);
+
           const objetoLabel = c.objetoImpuesto === '01' ? '01 - Sin objeto de impuesto' : '02 - Con objeto de impuesto';
 
           return (
@@ -216,7 +222,7 @@ export const FacturaPDF: React.FC<FacturaPDFProps> = ({ factura, logoUrl }) => {
                   <View style={{ flexDirection: 'row' }}><Text style={styles.conceptoSubBold}>No Identificación: </Text><Text style={styles.conceptoSub}>{c.noIdentificacion}</Text></View>
                 )}
                 {c.objetoImpuesto !== '01' && (
-                  <View><Text style={styles.conceptoSubBold}>Traslados:</Text><Text style={styles.conceptoSub}>IVA: 002, Base: {fmt(importeConcepto)}, Tasa: {tasaIva.toFixed(6)}, Importe: {fmt(ivaImporte)}</Text></View>
+                  <View><Text style={styles.conceptoSubBold}>Traslados:</Text><Text style={styles.conceptoSub}>IVA: 002, Base: {fmt(ivaBase)}, Tasa: {tasaIva.toFixed(6)}, Importe: {fmt(ivaImporte)}</Text></View>
                 )}
               </View>
               <Text style={styles.cPrecio}>{fmt(valorUnitario)}</Text>

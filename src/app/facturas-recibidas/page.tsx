@@ -52,9 +52,15 @@ const parseXmlToFactura = (xmlStr: string) => {
     const conceptosNodes = xmlDoc.getElementsByTagNameNS("*", "Concepto");
     const conceptos = Array.from(conceptosNodes).map((node: Element) => {
         let ivaTasa = 0.16;
+        let ivaBase = parseFloat(node.getAttribute("Importe") || "0");
+        let ivaImporte = 0;
+
+        // Buscamos el nodo exacto del Impuesto de esa línea
         const traslado = node.getElementsByTagNameNS("*", "Traslado")[0];
         if (traslado && traslado.getAttribute("Impuesto") === "002") {
             ivaTasa = parseFloat(traslado.getAttribute("TasaOCuota") || "0.16");
+            if (traslado.hasAttribute("Base")) ivaBase = parseFloat(traslado.getAttribute("Base") || "0");
+            if (traslado.hasAttribute("Importe")) ivaImporte = parseFloat(traslado.getAttribute("Importe") || "0");
         }
 
         return {
@@ -67,7 +73,9 @@ const parseXmlToFactura = (xmlStr: string) => {
             importe: parseFloat(node.getAttribute("Importe") || "0"),
             objetoImpuesto: node.getAttribute("ObjetoImp") || "02",
             noIdentificacion: node.getAttribute("NoIdentificacion") || "",
-            ivaTasa
+            ivaTasa,
+            ivaBase,
+            ivaImporte
         };
     });
 
