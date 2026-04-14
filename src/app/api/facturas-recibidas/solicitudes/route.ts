@@ -8,8 +8,8 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
     try {
-        const facturas = await prisma.facturaRecibida.findMany({
-            orderBy: { fechaEmision: 'desc' },
+        const facturas = await prisma.solicitudSat.findMany({
+            orderBy: { createdAt: 'desc' },
         });
         return NextResponse.json(facturas);
     } catch (error: any) {

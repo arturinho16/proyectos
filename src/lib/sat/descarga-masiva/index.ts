@@ -9,28 +9,44 @@ import {
     RequestType
 } from '@nodecfdi/sat-ws-descarga-masiva';
 
+export type EstadoSolicitudInterno =
+    | 'PENDIENTE'
+    | 'EN_PROCESO'
+    | 'COMPLETADA'
+    | 'SIN_RESULTADOS'
+    | 'DUPLICADA'
+    | 'RECHAZADA'
+    | 'ERROR'
+    | 'VENCIDA'
+    | 'RESPALDO_REQUERIDO';
+
+export type ResultadoVerificacionSAT = {
+    estado: EstadoSolicitudInterno;
+    mensajeSat: string;
+    packageIds: string[];
+    estadoSolicitudSAT: string;
+};
+
+function normalizarTexto(texto: string): string {
+    return (texto || '').toLowerCase();
+}
+
 export class DescargaMasivaSAT {
     private fiel: any;
     private service: any;
 
     constructor(cerString: string, keyString: string, password: string) {
-        // 1. Cargar la FIEL
         this.fiel = Fiel.create(cerString, keyString, password);
 
         if (!this.fiel.isValid()) {
-            throw new Error('La FIEL proporcionada no es válida o está caducada.');
+            throw new Error('La e.firma/FIEL proporcionada no es válida, no corresponde con la llave o está caducada.');
         }
 
-        // 2. Inicializar el cliente SOAP
         const requestBuilder = new FielRequestBuilder(this.fiel);
         const webClient = new HttpsWebClient();
-
         this.service = new Service(requestBuilder, webClient);
     }
 
-    /**
-     * PASO 1 y 2: Autenticarse y solicitar la descarga
-     */
     async solicitarFacturasRecibidas(fechaInicioStr: string, fechaFinStr: string): Promise<string> {
         try {
             const periodo = DateTimePeriod.createFromValues(fechaInicioStr, fechaFinStr);
@@ -48,60 +64,127 @@ export class DescargaMasivaSAT {
             }
 
             return solicitud.getRequestId();
-
         } catch (error: any) {
-            console.error("Error en solicitarFacturasRecibidas:", error);
+            console.error('Error en solicitarFacturasRecibidas:', error);
             throw error;
         }
     }
 
-    /**
-     * PASO 3: Verificar si el SAT ya terminó de procesar la solicitud
-     */
-    async verificarSolicitud(requestId: string): Promise<string[]> {
+    async verificarSolicitud(requestId: string): Promise<ResultadoVerificacionSAT> {
         try {
             const verificacion = await this.service.verify(requestId);
 
-            // Validar que el Web Service del SAT respondió sin errores de conexión (Código 5000)
-            if (!verificacion.getStatus().isAccepted()) {
-                throw new Error(`Error de comunicación con el SAT: ${verificacion.getStatus().getMessage()}`);
-            }
-
-            // Obtener el estado interno de la solicitud (El armado del ZIP: 1 al 6)
+            const status = verificacion.getStatus();
             const statusRequest = verificacion.getStatusRequest();
+            const packageIds: string[] = verificacion.getPackageIds?.() ?? [];
 
-            // Si la solicitud falló, fue rechazada o caducó
+            const mensajeComunicacion = status.getMessage?.() || 'Sin mensaje del SAT';
+            const valorSolicitud = String(statusRequest?.getValue?.() ?? '');
+
+            const mensajeBase = [
+                mensajeComunicacion,
+                valorSolicitud ? `EstadoSolicitud=${valorSolicitud}` : '',
+            ]
+                .filter(Boolean)
+                .join(' | ');
+
+            if (!status.isAccepted()) {
+                return {
+                    estado: 'ERROR',
+                    mensajeSat: `Error de comunicación con el SAT: ${mensajeComunicacion}`,
+                    packageIds: [],
+                    estadoSolicitudSAT: valorSolicitud || 'WS_ERROR',
+                };
+            }
+
+            if (valorSolicitud === '1' || statusRequest.isTypeOf?.('Accepted')) {
+                return {
+                    estado: 'PENDIENTE',
+                    mensajeSat: mensajeBase || 'Solicitud aceptada por el SAT.',
+                    packageIds: [],
+                    estadoSolicitudSAT: valorSolicitud || '1',
+                };
+            }
+
             if (
-                statusRequest.isTypeOf('Rejected') ||
-                statusRequest.isTypeOf('Failure') ||
-                statusRequest.isTypeOf('Expired')
+                valorSolicitud === '2' ||
+                statusRequest.isTypeOf?.('InProcess') ||
+                statusRequest.isTypeOf?.('InProgress')
             ) {
-                throw new Error(`Solicitud fallida en el SAT. Estado: ${statusRequest.getValue()}`);
+                return {
+                    estado: 'EN_PROCESO',
+                    mensajeSat: mensajeBase || 'El SAT sigue procesando la solicitud.',
+                    packageIds: [],
+                    estadoSolicitudSAT: valorSolicitud || '2',
+                };
             }
 
-            // Si los paquetes ya están listos (Estado 3: Terminada)
-            if (statusRequest.isTypeOf('Finished')) {
-                return verificacion.getPackageIds();
+            if (valorSolicitud === '3' || statusRequest.isTypeOf?.('Finished')) {
+                if (packageIds.length > 0) {
+                    return {
+                        estado: 'COMPLETADA',
+                        mensajeSat: mensajeBase || 'El SAT terminó y devolvió paquetes.',
+                        packageIds,
+                        estadoSolicitudSAT: valorSolicitud || '3',
+                    };
+                }
+
+                return {
+                    estado: 'SIN_RESULTADOS',
+                    mensajeSat: mensajeBase || 'El SAT terminó, pero no devolvió paquetes.',
+                    packageIds: [],
+                    estadoSolicitudSAT: valorSolicitud || '3',
+                };
             }
 
-            // Si sigue en "Aceptada" o "En Proceso", devolvemos vacío para intentar después
-            return [];
+            if (valorSolicitud === '4' || statusRequest.isTypeOf?.('Failure')) {
+                return {
+                    estado: 'ERROR',
+                    mensajeSat: mensajeBase || 'La solicitud falló en el SAT.',
+                    packageIds: [],
+                    estadoSolicitudSAT: valorSolicitud || '4',
+                };
+            }
 
+            if (valorSolicitud === '5' || statusRequest.isTypeOf?.('Rejected')) {
+                const texto = normalizarTexto(mensajeComunicacion);
+                const estado = /duplicad|5005/.test(texto) ? 'DUPLICADA' : 'RECHAZADA';
+
+                return {
+                    estado,
+                    mensajeSat: mensajeBase || 'La solicitud fue rechazada por el SAT.',
+                    packageIds: [],
+                    estadoSolicitudSAT: valorSolicitud || '5',
+                };
+            }
+
+            if (valorSolicitud === '6' || statusRequest.isTypeOf?.('Expired')) {
+                return {
+                    estado: 'VENCIDA',
+                    mensajeSat: mensajeBase || 'La solicitud venció en el SAT.',
+                    packageIds: [],
+                    estadoSolicitudSAT: valorSolicitud || '6',
+                };
+            }
+
+            return {
+                estado: 'EN_PROCESO',
+                mensajeSat: mensajeBase || 'El SAT sigue procesando la solicitud.',
+                packageIds: [],
+                estadoSolicitudSAT: valorSolicitud || 'DESCONOCIDO',
+            };
         } catch (error: any) {
-            console.error("Error en verificarSolicitud:", error);
+            console.error('Error en verificarSolicitud:', error);
             throw error;
         }
     }
 
-    /**
-     * PASO 4: Descargar el ZIP usando el ID del Paquete
-     */
     async descargarPaquete(packageId: string): Promise<string> {
         try {
             const descarga = await this.service.download(packageId);
-            return descarga.getPackageContent(); // Devuelve el contenido en Base64
+            return descarga.getPackageContent();
         } catch (error: any) {
-            console.error("Error en descargarPaquete:", error);
+            console.error('Error en descargarPaquete:', error);
             throw error;
         }
     }
