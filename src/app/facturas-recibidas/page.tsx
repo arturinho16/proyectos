@@ -15,7 +15,7 @@ import {
     ShieldCheck,
     LogOut,
     UploadCloud,
-    KeyRound
+    KeyRound,
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
@@ -56,19 +56,18 @@ const ESTADO_SOLICITUD_STYLES: Record<string, string> = {
     RESPALDO_REQUERIDO: 'bg-yellow-800/50 text-yellow-200',
 };
 
-// --- DICCIONARIOS SAT Y CONVERTIDOR DE NÚMEROS A LETRAS ---
 const CAT_FORMA_PAGO: Record<string, string> = {
     '01': '01 - Efectivo',
     '02': '02 - Cheque nominativo',
     '03': '03 - Transferencia electrónica de fondos',
     '04': '04 - Tarjeta de crédito',
     '28': '28 - Tarjeta de débito',
-    '99': '99 - Por definir'
+    '99': '99 - Por definir',
 };
 
 const CAT_METODO_PAGO: Record<string, string> = {
     PUE: 'PUE - Pago en una sola exhibición',
-    PPD: 'PPD - Pago en parcialidades o diferido'
+    PPD: 'PPD - Pago en parcialidades o diferido',
 };
 
 const CAT_TIPO_COMPROBANTE: Record<string, string> = {
@@ -76,13 +75,13 @@ const CAT_TIPO_COMPROBANTE: Record<string, string> = {
     E: 'E - Egreso',
     T: 'T - Traslado',
     N: 'N - Nómina',
-    P: 'P - Pago'
+    P: 'P - Pago',
 };
 
 const CAT_MONEDA: Record<string, string> = {
     MXN: 'MXN - Peso Mexicano',
     USD: 'USD - Dólar americano',
-    EUR: 'EUR - Euro'
+    EUR: 'EUR - Euro',
 };
 
 const NumeroALetras = (num: number): string => {
@@ -103,7 +102,7 @@ const NumeroALetras = (num: number): string => {
 
     const Decenas = (n: number) => {
         const d = Math.floor(n / 10);
-        const u = n - (d * 10);
+        const u = n - d * 10;
 
         switch (d) {
             case 1:
@@ -117,25 +116,31 @@ const NumeroALetras = (num: number): string => {
                     default: return 'DIECI' + Unidades(u);
                 }
             case 2:
-                switch (u) {
-                    case 0: return 'VEINTE';
-                    default: return 'VEINTI' + Unidades(u);
-                }
-            case 3: return u > 0 ? 'TREINTA Y ' + Unidades(u) : 'TREINTA';
-            case 4: return u > 0 ? 'CUARENTA Y ' + Unidades(u) : 'CUARENTA';
-            case 5: return u > 0 ? 'CINCUENTA Y ' + Unidades(u) : 'CINCUENTA';
-            case 6: return u > 0 ? 'SESENTA Y ' + Unidades(u) : 'SESENTA';
-            case 7: return u > 0 ? 'SETENTA Y ' + Unidades(u) : 'SETENTA';
-            case 8: return u > 0 ? 'OCHENTA Y ' + Unidades(u) : 'OCHENTA';
-            case 9: return u > 0 ? 'NOVENTA Y ' + Unidades(u) : 'NOVENTA';
-            case 0: return Unidades(u);
-            default: return '';
+                return u === 0 ? 'VEINTE' : 'VEINTI' + Unidades(u);
+            case 3:
+                return u > 0 ? 'TREINTA Y ' + Unidades(u) : 'TREINTA';
+            case 4:
+                return u > 0 ? 'CUARENTA Y ' + Unidades(u) : 'CUARENTA';
+            case 5:
+                return u > 0 ? 'CINCUENTA Y ' + Unidades(u) : 'CINCUENTA';
+            case 6:
+                return u > 0 ? 'SESENTA Y ' + Unidades(u) : 'SESENTA';
+            case 7:
+                return u > 0 ? 'SETENTA Y ' + Unidades(u) : 'SETENTA';
+            case 8:
+                return u > 0 ? 'OCHENTA Y ' + Unidades(u) : 'OCHENTA';
+            case 9:
+                return u > 0 ? 'NOVENTA Y ' + Unidades(u) : 'NOVENTA';
+            case 0:
+                return Unidades(u);
+            default:
+                return '';
         }
     };
 
     const Centenas = (n: number) => {
         const c = Math.floor(n / 100);
-        const d = n - (c * 100);
+        const d = n - c * 100;
 
         switch (c) {
             case 1: return d > 0 ? 'CIENTO ' + Decenas(d) : 'CIEN';
@@ -153,7 +158,6 @@ const NumeroALetras = (num: number): string => {
 
     const Seccion = (n: number, div: number, strS: string, strP: string) => {
         const c = Math.floor(n / div);
-        const r = n - (c * div);
         let letras = '';
 
         if (c > 0) {
@@ -161,7 +165,6 @@ const NumeroALetras = (num: number): string => {
             else letras = strS;
         }
 
-        if (r > 0) letras += '';
         return letras;
     };
 
@@ -181,20 +184,14 @@ const NumeroALetras = (num: number): string => {
         return strMillones === '' ? strMiles : strMillones + ' ' + strMiles;
     };
 
-    const data = {
-        entero: Math.floor(num),
-        centavos: ((Math.round(num * 100)) - (Math.floor(num) * 100))
-    };
+    const entero = Math.floor(num);
+    const centavos = Math.round(num * 100) - entero * 100;
+    const letrasCentavos = centavos.toString().padStart(2, '0') + '/100';
 
-    const letrasCentavos = data.centavos > 0
-        ? data.centavos.toString().padStart(2, '0') + '/100'
-        : '00/100';
-
-    if (data.entero === 0) return 'CERO PESOS ' + letrasCentavos;
-    return Millones(data.entero) + ' PESOS ' + letrasCentavos;
+    if (entero === 0) return 'CERO PESOS ' + letrasCentavos;
+    return Millones(entero) + ' PESOS ' + letrasCentavos;
 };
 
-// --- PARSEADOR XML ---
 const parseXmlToFactura = (xmlStr: string) => {
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(xmlStr, 'text/xml');
@@ -203,7 +200,7 @@ const parseXmlToFactura = (xmlStr: string) => {
         let nodes = xmlDoc.getElementsByTagNameNS('*', tagName);
         if (nodes.length === 0) nodes = xmlDoc.getElementsByTagName(`cfdi:${tagName}`);
         if (nodes.length === 0) nodes = xmlDoc.getElementsByTagName(`tfd:${tagName}`);
-        return nodes.length > 0 ? (nodes[0].getAttribute(attrName) || '') : '';
+        return nodes.length > 0 ? nodes[0].getAttribute(attrName) || '' : '';
     };
 
     const conceptosNodes = xmlDoc.getElementsByTagNameNS('*', 'Concepto');
@@ -231,7 +228,7 @@ const parseXmlToFactura = (xmlStr: string) => {
             noIdentificacion: node.getAttribute('NoIdentificacion') || '',
             ivaTasa,
             ivaBase,
-            ivaImporte
+            ivaImporte,
         };
     });
 
@@ -282,14 +279,14 @@ const parseXmlToFactura = (xmlStr: string) => {
             nombre: getAttr('Emisor', 'Nombre'),
             rfc: emisorRfc,
             regimenFiscal: getAttr('Emisor', 'RegimenFiscal'),
-            cp: getAttr('Comprobante', 'LugarExpedicion')
+            cp: getAttr('Comprobante', 'LugarExpedicion'),
         },
         receptor: {
             nombre: getAttr('Receptor', 'Nombre'),
             rfc: receptorRfc,
             usoCfdi: getAttr('Receptor', 'UsoCFDI'),
             regimenFiscal: getAttr('Receptor', 'RegimenFiscalReceptor'),
-            cp: getAttr('Receptor', 'DomicilioFiscalReceptor')
+            cp: getAttr('Receptor', 'DomicilioFiscalReceptor'),
         },
         conceptos,
         subtotal: parseFloat(getAttr('Comprobante', 'SubTotal') || '0'),
@@ -300,7 +297,7 @@ const parseXmlToFactura = (xmlStr: string) => {
         formaPago: CAT_FORMA_PAGO[formaPagoKey] || formaPagoKey,
         metodoPago: CAT_METODO_PAGO[metodoPagoKey] || metodoPagoKey,
         tipoComprobante: CAT_TIPO_COMPROBANTE[tipoCompKey] || tipoCompKey,
-        exportacion: getAttr('Comprobante', 'Exportacion')
+        exportacion: getAttr('Comprobante', 'Exportacion'),
     };
 };
 
@@ -391,7 +388,9 @@ function SatLoginModal({ open, loading, onSubmit }: SatLoginModalProps) {
                         </label>
 
                         <div className="space-y-1 md:col-span-2">
-                            <label className="text-xs font-bold uppercase text-slate-500">Contraseña de la e.firma</label>
+                            <label className="text-xs font-bold uppercase text-slate-500">
+                                Contraseña de la e.firma
+                            </label>
                             <div className="relative">
                                 <KeyRound className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
                                 <input
@@ -415,7 +414,11 @@ function SatLoginModal({ open, loading, onSubmit }: SatLoginModalProps) {
                             disabled={loading}
                             className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50"
                         >
-                            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
+                            {loading ? (
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                            ) : (
+                                <ShieldCheck className="w-5 h-5" />
+                            )}
                             Conectar SAT
                         </button>
                     </div>
@@ -430,6 +433,7 @@ export default function FacturasRecibidasPage() {
     const [solicitudes, setSolicitudes] = useState<SolicitudSAT[]>([]);
     const [loading, setLoading] = useState(true);
     const [sincronizando, setSincronizando] = useState(false);
+    const [autoComprobando, setAutoComprobando] = useState(false);
     const [q, setQ] = useState('');
     const [paginaActual, setPaginaActual] = useState(1);
     const ITEMS_POR_PAGINA = 10;
@@ -438,24 +442,33 @@ export default function FacturasRecibidasPage() {
     const [satSesionActiva, setSatSesionActiva] = useState(false);
     const [satRfc, setSatRfc] = useState('');
     const [loginSatCargando, setLoginSatCargando] = useState(false);
+
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const verificandoRef = useRef(false);
 
     const hoy = new Date().toISOString().split('T')[0];
-    const haceUnaSemana = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const haceUnaSemana = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split('T')[0];
 
     const [fechaInicio, setFechaInicio] = useState(haceUnaSemana);
     const [fechaFin, setFechaFin] = useState(hoy);
 
     const cargar = useCallback(async () => {
         setLoading(true);
+
         try {
             const timestamp = new Date().getTime();
 
-            const resFacturas = await fetch(`/api/facturas-recibidas?t=${timestamp}`);
+            const resFacturas = await fetch(`/api/facturas-recibidas?t=${timestamp}`, {
+                cache: 'no-store',
+            });
             const dataFacturas = await resFacturas.json();
             setFacturas(Array.isArray(dataFacturas) ? dataFacturas : []);
 
-            const resSolicitudes = await fetch(`/api/facturas-recibidas/solicitudes?t=${timestamp}`);
+            const resSolicitudes = await fetch(`/api/facturas-recibidas/solicitudes?t=${timestamp}`, {
+                cache: 'no-store',
+            });
             const dataSolicitudes = await resSolicitudes.json();
             setSolicitudes(Array.isArray(dataSolicitudes) ? dataSolicitudes : []);
         } catch (err) {
@@ -480,9 +493,112 @@ export default function FacturasRecibidasPage() {
         }
     }, []);
 
-    useEffect(() => { cargar(); }, [cargar]);
-    useEffect(() => { cargarSesionSat(); }, [cargarSesionSat]);
-    useEffect(() => { setPaginaActual(1); }, [q]);
+    useEffect(() => {
+        void cargar();
+    }, [cargar]);
+
+    useEffect(() => {
+        void cargarSesionSat();
+    }, [cargarSesionSat]);
+
+    useEffect(() => {
+        setPaginaActual(1);
+    }, [q]);
+
+    const esSolicitudActiva = useCallback((s: SolicitudSAT) => {
+        if (s.estado === 'PENDIENTE' || s.estado === 'EN_PROCESO') return true;
+
+        // rescata solicitudes viejas que quedaron COMPLETADA sin haber guardado XML realmente
+        if (s.estado === 'COMPLETADA' && !(s.mensajeSat || '').includes('XML guardados:')) {
+            return true;
+        }
+
+        return false;
+    }, []);
+
+    const marcarSolicitudesComoVerificando = useCallback(() => {
+        setSolicitudes((prev) =>
+            prev.map((s) =>
+                esSolicitudActiva(s)
+                    ? {
+                        ...s,
+                        estado: s.estado === 'COMPLETADA' ? 'EN_PROCESO' : 'EN_PROCESO',
+                        mensajeSat: 'Consultando estado con SAT...',
+                    }
+                    : s
+            )
+        );
+    }, [esSolicitudActiva]);
+
+    const verificarDescargas = useCallback(
+        async ({ silent = false, background = false }: { silent?: boolean; background?: boolean } = {}) => {
+            if (verificandoRef.current) return;
+
+            verificandoRef.current = true;
+
+            if (!background) {
+                setSincronizando(true);
+            }
+
+            marcarSolicitudesComoVerificando();
+
+            try {
+                const res = await fetch('/api/facturas-recibidas/verificar', {
+                    method: 'GET',
+                    cache: 'no-store',
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    if (!silent) {
+                        alert(`❌ Error: ${data.error || 'No se pudo comprobar con SAT.'}`);
+                    }
+                    await cargar();
+                    return;
+                }
+
+                await cargar();
+
+                if (!silent && data.mensaje) {
+                    alert(`ℹ️ ${data.mensaje}`);
+                }
+            } catch (error) {
+                console.error(error);
+                if (!silent) {
+                    alert('Error al comprobar descargas.');
+                }
+            } finally {
+                verificandoRef.current = false;
+                if (!background) {
+                    setSincronizando(false);
+                }
+            }
+        },
+        [cargar, marcarSolicitudesComoVerificando]
+    );
+
+    const tieneSolicitudesActivas = solicitudes.some(esSolicitudActiva);
+
+    useEffect(() => {
+        if (!satSesionActiva || !tieneSolicitudesActivas) {
+            setAutoComprobando(false);
+            return;
+        }
+
+        setAutoComprobando(true);
+
+        void verificarDescargas({ silent: true, background: true });
+
+        const intervalId = window.setInterval(() => {
+            void verificarDescargas({ silent: true, background: true });
+        }, 45000);
+
+        return () => {
+            window.clearInterval(intervalId);
+            setAutoComprobando(false);
+        };
+    }, [satSesionActiva, tieneSolicitudesActivas, verificarDescargas]);
 
     const handleLoginSat = async ({
         rfc,
@@ -543,6 +659,7 @@ export default function FacturasRecibidasPage() {
             setSatSesionActiva(false);
             setSatRfc('');
             setMostrarLoginSat(true);
+            setAutoComprobando(false);
             alert('✅ Sesión SAT cerrada.');
         } catch (error) {
             alert('No fue posible cerrar la sesión SAT.');
@@ -551,11 +668,12 @@ export default function FacturasRecibidasPage() {
 
     const handleSincronizar = async () => {
         setSincronizando(true);
+
         try {
             const res = await fetch('/api/facturas-recibidas', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fechaInicio, fechaFin })
+                body: JSON.stringify({ fechaInicio, fechaFin }),
             });
 
             const data = await res.json();
@@ -566,7 +684,7 @@ export default function FacturasRecibidasPage() {
             }
 
             alert(`✅ ${data.mensaje}`);
-            cargar();
+            await cargar();
         } catch (error) {
             alert('Error de conexión al sincronizar con el SAT.');
         } finally {
@@ -575,29 +693,14 @@ export default function FacturasRecibidasPage() {
     };
 
     const handleVerificarDescargas = async () => {
-        setSincronizando(true);
-        try {
-            const res = await fetch('/api/facturas-recibidas/verificar');
-            const data = await res.json();
-
-            if (!res.ok) {
-                alert(`❌ Error: ${data.error}`);
-                return;
-            }
-
-            alert(`ℹ️ ${data.mensaje}`);
-            cargar();
-        } catch (error) {
-            alert('Error al comprobar descargas.');
-        } finally {
-            setSincronizando(false);
-        }
+        await verificarDescargas({ silent: false, background: false });
     };
 
     const handleSubirXML = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
 
         setSincronizando(true);
+
         try {
             const file = e.target.files[0];
             const text = await file.text();
@@ -605,15 +708,18 @@ export default function FacturasRecibidasPage() {
             const res = await fetch('/api/facturas-recibidas/manual', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ xmlContenido: text })
+                body: JSON.stringify({ xmlContenido: text }),
             });
 
             const data = await res.json();
 
-            if (!res.ok) alert(`❌ Error: ${data.error}`);
-            else alert(`✅ ${data.mensaje}`);
+            if (!res.ok) {
+                alert(`❌ Error: ${data.error}`);
+            } else {
+                alert(`✅ ${data.mensaje}`);
+            }
 
-            cargar();
+            await cargar();
         } catch (err) {
             alert('Error al leer el archivo XML.');
         } finally {
@@ -623,7 +729,10 @@ export default function FacturasRecibidasPage() {
     };
 
     const handleDescargarXML = (f: FacturaRecibida) => {
-        if (!f.xmlContenido) return alert('XML no disponible.');
+        if (!f.xmlContenido) {
+            alert('XML no disponible.');
+            return;
+        }
 
         const blob = new Blob([f.xmlContenido], { type: 'application/xml' });
         const url = URL.createObjectURL(blob);
@@ -639,7 +748,10 @@ export default function FacturasRecibidasPage() {
     };
 
     const handleDescargarPDF = async (f: FacturaRecibida) => {
-        if (!f.xmlContenido) return alert('No hay XML guardado para generar el PDF.');
+        if (!f.xmlContenido) {
+            alert('No hay XML guardado para generar el PDF.');
+            return;
+        }
 
         try {
             const facturaParseada = parseXmlToFactura(f.xmlContenido);
@@ -654,14 +766,26 @@ export default function FacturasRecibidasPage() {
     };
 
     const handleConsolidado = async () => {
-        if (facturas.length === 0) return alert('No hay facturas para consolidar.');
+        if (facturas.length === 0) {
+            alert('No hay facturas para consolidar.');
+            return;
+        }
 
         const zip = new JSZip();
         const folderXML = zip.folder('Gastos_XML');
+        let agregadas = 0;
 
-        facturas.forEach(f => {
-            if (f.xmlContenido) folderXML?.file(`${f.emisorRfc}_${f.uuid}.xml`, f.xmlContenido);
+        facturas.forEach((f) => {
+            if (f.xmlContenido) {
+                folderXML?.file(`${f.emisorRfc}_${f.uuid}.xml`, f.xmlContenido);
+                agregadas++;
+            }
         });
+
+        if (agregadas === 0) {
+            alert('No hay XML disponibles en base de datos para consolidar.');
+            return;
+        }
 
         const zipBlob = await zip.generateAsync({ type: 'blob' });
         saveAs(zipBlob, 'Gastos_Consolidado_XML.zip');
@@ -672,7 +796,7 @@ export default function FacturasRecibidasPage() {
 
     const fmtFecha = (d: string) => new Date(d).toLocaleDateString('es-MX');
 
-    const facturasFiltradas = facturas.filter(f => {
+    const facturasFiltradas = facturas.filter((f) => {
         const busqueda = q.toLowerCase();
         return (
             !q ||
@@ -689,10 +813,12 @@ export default function FacturasRecibidasPage() {
     return (
         <div className="p-8 bg-slate-50 min-h-screen text-slate-800">
             <div className="max-w-7xl mx-auto space-y-6 pb-24">
-
                 <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
-                        <Link href="/" className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 font-bold transition-colors">
+                        <Link
+                            href="/"
+                            className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 font-bold transition-colors"
+                        >
                             <ArrowLeft className="w-5 h-5" /> Panel
                         </Link>
                         <Inbox className="w-8 h-8 text-pink-600 ml-2" />
@@ -700,13 +826,15 @@ export default function FacturasRecibidasPage() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
-                        <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border shadow-sm ${satSesionActiva
-                            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                            : 'bg-amber-50 border-amber-200 text-amber-700'
-                            }`}>
+                        <div
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl border shadow-sm ${satSesionActiva
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                : 'bg-amber-50 border-amber-200 text-amber-700'
+                                }`}
+                        >
                             <ShieldCheck className="w-4 h-4" />
                             <span className="text-sm font-bold">
-                                {satSesionActiva ? `SAT conectado${satRfc ? `: ${satRfc}` : ''}` : 'SAT no conectado'}
+                                {satSesionActiva ? `SAT conectado: ${satRfc}` : 'SAT no conectado'}
                             </span>
                         </div>
 
@@ -780,7 +908,11 @@ export default function FacturasRecibidasPage() {
                             disabled={sincronizando || !satSesionActiva}
                             className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl hover:bg-emerald-700 transition-all font-bold text-sm shadow-lg shadow-emerald-100 disabled:opacity-50"
                         >
-                            {sincronizando ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                            {sincronizando ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <RefreshCw className="w-4 h-4" />
+                            )}
                             Comprobar
                         </button>
 
@@ -789,11 +921,22 @@ export default function FacturasRecibidasPage() {
                             disabled={sincronizando || !satSesionActiva}
                             className="flex items-center gap-2 bg-pink-600 text-white px-4 py-2 rounded-xl hover:bg-pink-700 transition-all font-bold text-sm shadow-lg shadow-pink-100 disabled:opacity-50"
                         >
-                            {sincronizando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Inbox className="w-4 h-4" />}
+                            {sincronizando ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Inbox className="w-4 h-4" />
+                            )}
                             Pedir al SAT
                         </button>
                     </div>
                 </div>
+
+                {autoComprobando && (
+                    <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl px-4 py-3 text-sm font-bold">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Auto-comprobando SAT cada 45 segundos...
+                    </div>
+                )}
 
                 {mostrarHistorial && (
                     <div className="bg-slate-800 p-6 rounded-2xl shadow-lg text-white">
@@ -822,7 +965,7 @@ export default function FacturasRecibidasPage() {
                                         </tr>
                                     ) : null}
 
-                                    {solicitudes.map(s => (
+                                    {solicitudes.map((s) => (
                                         <tr key={s.id}>
                                             <td className="py-3 font-medium">
                                                 {fmtFecha(s.fechaInicio)} - {fmtFecha(s.fechaFin)}
@@ -833,7 +976,10 @@ export default function FacturasRecibidasPage() {
                                             </td>
 
                                             <td className="py-3">
-                                                <span className={`px-2 py-1 rounded-md text-xs font-bold ${ESTADO_SOLICITUD_STYLES[s.estado] || 'bg-slate-700 text-slate-200'}`}>
+                                                <span
+                                                    className={`px-2 py-1 rounded-md text-xs font-bold ${ESTADO_SOLICITUD_STYLES[s.estado] || 'bg-slate-700 text-slate-200'
+                                                        }`}
+                                                >
                                                     {s.estado}
                                                 </span>
                                             </td>
@@ -869,7 +1015,7 @@ export default function FacturasRecibidasPage() {
                         <table className="w-full text-base text-left">
                             <thead className="bg-slate-50 border-b border-slate-200">
                                 <tr>
-                                    {['Fecha', 'Proveedor / RFC', 'UUID', 'Total', 'Estado', 'Acciones'].map(h => (
+                                    {['Fecha', 'Proveedor / RFC', 'UUID', 'Total', 'Estado', 'Acciones'].map((h) => (
                                         <th key={h} className="px-6 py-4 text-sm font-bold uppercase text-slate-500">
                                             {h}
                                         </th>
@@ -890,7 +1036,7 @@ export default function FacturasRecibidasPage() {
                                         </td>
                                     </tr>
                                 ) : (
-                                    facturasPaginadas.map(f => (
+                                    facturasPaginadas.map((f) => (
                                         <tr key={f.id} className="hover:bg-slate-50 transition-colors">
                                             <td className="px-6 py-4 text-slate-600">{fmtFecha(f.fechaEmision)}</td>
                                             <td className="px-6 py-4">
@@ -898,9 +1044,16 @@ export default function FacturasRecibidasPage() {
                                                 <div className="text-sm font-mono text-slate-500 uppercase">{f.emisorRfc}</div>
                                             </td>
                                             <td className="px-6 py-4 text-xs font-mono text-slate-500">{f.uuid}</td>
-                                            <td className="px-6 py-4 font-mono font-bold text-blue-700">{fmt(Number(f.total))}</td>
+                                            <td className="px-6 py-4 font-mono font-bold text-blue-700">
+                                                {fmt(Number(f.total))}
+                                            </td>
                                             <td className="px-6 py-4">
-                                                <span className={`px-3 py-1 rounded-lg text-xs font-bold ${f.estadoSat === 'VIGENTE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                                                <span
+                                                    className={`px-3 py-1 rounded-lg text-xs font-bold ${f.estadoSat === 'VIGENTE'
+                                                        ? 'bg-green-100 text-green-700'
+                                                        : 'bg-red-100 text-red-600'
+                                                        }`}
+                                                >
                                                     {f.estadoSat}
                                                 </span>
                                             </td>
@@ -937,14 +1090,14 @@ export default function FacturasRecibidasPage() {
                             </span>
                             <div className="flex gap-2">
                                 <button
-                                    onClick={() => setPaginaActual(p => Math.max(1, p - 1))}
+                                    onClick={() => setPaginaActual((p) => Math.max(1, p - 1))}
                                     disabled={paginaActual === 1}
                                     className="px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm font-bold hover:bg-slate-100 disabled:opacity-50"
                                 >
                                     Anterior
                                 </button>
                                 <button
-                                    onClick={() => setPaginaActual(p => Math.min(totalPaginas, p + 1))}
+                                    onClick={() => setPaginaActual((p) => Math.min(totalPaginas, p + 1))}
                                     disabled={paginaActual === totalPaginas}
                                     className="px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm font-bold hover:bg-slate-100 disabled:opacity-50"
                                 >

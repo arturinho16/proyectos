@@ -6,30 +6,25 @@ import {
     QueryParameters,
     DateTimePeriod,
     DownloadType,
-    RequestType
+    RequestType,
 } from '@nodecfdi/sat-ws-descarga-masiva';
 
 export type EstadoSolicitudInterno =
     | 'PENDIENTE'
     | 'EN_PROCESO'
     | 'COMPLETADA'
-    | 'SIN_RESULTADOS'
-    | 'DUPLICADA'
-    | 'RECHAZADA'
     | 'ERROR'
+    | 'RECHAZADA'
     | 'VENCIDA'
-    | 'RESPALDO_REQUERIDO';
+    | 'DESCONOCIDO';
 
-export type ResultadoVerificacionSAT = {
-    estado: EstadoSolicitudInterno;
-    mensajeSat: string;
-    packageIds: string[];
-    estadoSolicitudSAT: string;
+export type VerificacionSolicitudResult = {
+    requestId: string;
+    estadoSolicitudCodigo: number | null;
+    estadoSolicitud: EstadoSolicitudInterno;
+    paqueteIds: string[];
+    mensaje: string;
 };
-
-function normalizarTexto(texto: string): string {
-    return (texto || '').toLowerCase();
-}
 
 export class DescargaMasivaSAT {
     private fiel: any;
@@ -38,140 +33,124 @@ export class DescargaMasivaSAT {
     constructor(cerString: string, keyString: string, password: string) {
         this.fiel = Fiel.create(cerString, keyString, password);
 
-        if (!this.fiel.isValid()) {
-            throw new Error('La e.firma/FIEL proporcionada no es válida, no corresponde con la llave o está caducada.');
+        if (!this.fiel?.isValid?.()) {
+            throw new Error(
+                'La e.firma proporcionada no es válida, está vencida o la contraseña es incorrecta.'
+            );
         }
 
         const requestBuilder = new FielRequestBuilder(this.fiel);
         const webClient = new HttpsWebClient();
+
         this.service = new Service(requestBuilder, webClient);
     }
 
-    async solicitarFacturasRecibidas(fechaInicioStr: string, fechaFinStr: string): Promise<string> {
+    private mapEstadoSolicitud(codigo: number | null): EstadoSolicitudInterno {
+        switch (codigo) {
+            case 1:
+                return 'PENDIENTE';
+            case 2:
+                return 'EN_PROCESO';
+            case 3:
+                return 'COMPLETADA';
+            case 4:
+                return 'ERROR';
+            case 5:
+                return 'RECHAZADA';
+            case 6:
+                return 'VENCIDA';
+            default:
+                return 'DESCONOCIDO';
+        }
+    }
+
+    private resolverCodigoEstado(statusRequest: any): number | null {
+        const rawValue = statusRequest?.getValue?.();
+        const numericValue = Number(rawValue);
+
+        if (Number.isFinite(numericValue)) {
+            return numericValue;
+        }
+
+        if (statusRequest?.isTypeOf?.('Accepted')) return 1;
+        if (statusRequest?.isTypeOf?.('InProgress')) return 2;
+        if (statusRequest?.isTypeOf?.('InProcess')) return 2;
+        if (statusRequest?.isTypeOf?.('Finished')) return 3;
+        if (statusRequest?.isTypeOf?.('Failure')) return 4;
+        if (statusRequest?.isTypeOf?.('Rejected')) return 5;
+        if (statusRequest?.isTypeOf?.('Expired')) return 6;
+
+        return null;
+    }
+    async solicitarFacturasRecibidas(
+        fechaInicioStr: string,
+        fechaFinStr: string,
+        tipoSolicitud: 'CFDI' | 'METADATA' = 'CFDI'
+    ): Promise<{ requestId: string; mensaje: string; tipoSolicitud: 'CFDI' | 'METADATA' }> {
         try {
             const periodo = DateTimePeriod.createFromValues(fechaInicioStr, fechaFinStr);
+
+            const requestType =
+                tipoSolicitud === 'METADATA' ? RequestType.metadata : RequestType.cfdi;
 
             const query = QueryParameters.create(
                 periodo,
                 DownloadType.received,
-                RequestType.cfdi
+                requestType
             );
 
-            const solicitud = await this.service.query(query);
+            console.log('[SAT] Creando solicitud:', {
+                fechaInicioStr,
+                fechaFinStr,
+                tipoSolicitud,
+                requestType,
+            });
 
-            if (!solicitud.getStatus().isAccepted()) {
-                throw new Error(`El SAT rechazó la solicitud: ${solicitud.getStatus().getMessage()}`);
+            const solicitud = await this.service.query(query);
+            const status = solicitud.getStatus();
+            const statusMessage = status?.getMessage?.() || 'Sin mensaje del SAT';
+
+            if (!status.isAccepted()) {
+                throw new Error(`El SAT rechazó la solicitud: ${statusMessage}`);
             }
 
-            return solicitud.getRequestId();
+            const requestId = solicitud.getRequestId();
+
+            return {
+                requestId,
+                tipoSolicitud,
+                mensaje: `Solicitud creada correctamente. Token asignado: ${requestId}. TipoSolicitud=${tipoSolicitud}`,
+            };
         } catch (error: any) {
             console.error('Error en solicitarFacturasRecibidas:', error);
             throw error;
         }
     }
 
-    async verificarSolicitud(requestId: string): Promise<ResultadoVerificacionSAT> {
+    async verificarSolicitud(requestId: string): Promise<VerificacionSolicitudResult> {
         try {
             const verificacion = await this.service.verify(requestId);
-
             const status = verificacion.getStatus();
-            const statusRequest = verificacion.getStatusRequest();
-            const packageIds: string[] = verificacion.getPackageIds?.() ?? [];
-
-            const mensajeComunicacion = status.getMessage?.() || 'Sin mensaje del SAT';
-            const valorSolicitud = String(statusRequest?.getValue?.() ?? '');
-
-            const mensajeBase = [
-                mensajeComunicacion,
-                valorSolicitud ? `EstadoSolicitud=${valorSolicitud}` : '',
-            ]
-                .filter(Boolean)
-                .join(' | ');
+            const statusMessage = status?.getMessage?.() || 'Sin mensaje del SAT';
 
             if (!status.isAccepted()) {
-                return {
-                    estado: 'ERROR',
-                    mensajeSat: `Error de comunicación con el SAT: ${mensajeComunicacion}`,
-                    packageIds: [],
-                    estadoSolicitudSAT: valorSolicitud || 'WS_ERROR',
-                };
+                throw new Error(`Error de comunicación con el SAT: ${statusMessage}`);
             }
 
-            if (valorSolicitud === '1' || statusRequest.isTypeOf?.('Accepted')) {
-                return {
-                    estado: 'PENDIENTE',
-                    mensajeSat: mensajeBase || 'Solicitud aceptada por el SAT.',
-                    packageIds: [],
-                    estadoSolicitudSAT: valorSolicitud || '1',
-                };
-            }
+            const statusRequest = verificacion.getStatusRequest();
+            const estadoSolicitudCodigo = this.resolverCodigoEstado(statusRequest);
+            const estadoSolicitud = this.mapEstadoSolicitud(estadoSolicitudCodigo);
+            const paqueteIds = verificacion.getPackageIds?.() || [];
 
-            if (
-                valorSolicitud === '2' ||
-                statusRequest.isTypeOf?.('InProcess') ||
-                statusRequest.isTypeOf?.('InProgress')
-            ) {
-                return {
-                    estado: 'EN_PROCESO',
-                    mensajeSat: mensajeBase || 'El SAT sigue procesando la solicitud.',
-                    packageIds: [],
-                    estadoSolicitudSAT: valorSolicitud || '2',
-                };
-            }
-
-            if (valorSolicitud === '3' || statusRequest.isTypeOf?.('Finished')) {
-                if (packageIds.length > 0) {
-                    return {
-                        estado: 'COMPLETADA',
-                        mensajeSat: mensajeBase || 'El SAT terminó y devolvió paquetes.',
-                        packageIds,
-                        estadoSolicitudSAT: valorSolicitud || '3',
-                    };
-                }
-
-                return {
-                    estado: 'SIN_RESULTADOS',
-                    mensajeSat: mensajeBase || 'El SAT terminó, pero no devolvió paquetes.',
-                    packageIds: [],
-                    estadoSolicitudSAT: valorSolicitud || '3',
-                };
-            }
-
-            if (valorSolicitud === '4' || statusRequest.isTypeOf?.('Failure')) {
-                return {
-                    estado: 'ERROR',
-                    mensajeSat: mensajeBase || 'La solicitud falló en el SAT.',
-                    packageIds: [],
-                    estadoSolicitudSAT: valorSolicitud || '4',
-                };
-            }
-
-            if (valorSolicitud === '5' || statusRequest.isTypeOf?.('Rejected')) {
-                const texto = normalizarTexto(mensajeComunicacion);
-                const estado = /duplicad|5005/.test(texto) ? 'DUPLICADA' : 'RECHAZADA';
-
-                return {
-                    estado,
-                    mensajeSat: mensajeBase || 'La solicitud fue rechazada por el SAT.',
-                    packageIds: [],
-                    estadoSolicitudSAT: valorSolicitud || '5',
-                };
-            }
-
-            if (valorSolicitud === '6' || statusRequest.isTypeOf?.('Expired')) {
-                return {
-                    estado: 'VENCIDA',
-                    mensajeSat: mensajeBase || 'La solicitud venció en el SAT.',
-                    packageIds: [],
-                    estadoSolicitudSAT: valorSolicitud || '6',
-                };
-            }
+            const mensaje = `Solicitud Aceptada | EstadoSolicitud=${estadoSolicitudCodigo ?? 'N/D'
+                } | Paquetes descargados: ${paqueteIds.length}`;
 
             return {
-                estado: 'EN_PROCESO',
-                mensajeSat: mensajeBase || 'El SAT sigue procesando la solicitud.',
-                packageIds: [],
-                estadoSolicitudSAT: valorSolicitud || 'DESCONOCIDO',
+                requestId,
+                estadoSolicitudCodigo,
+                estadoSolicitud,
+                paqueteIds,
+                mensaje,
             };
         } catch (error: any) {
             console.error('Error en verificarSolicitud:', error);
@@ -182,6 +161,12 @@ export class DescargaMasivaSAT {
     async descargarPaquete(packageId: string): Promise<string> {
         try {
             const descarga = await this.service.download(packageId);
+            const status = descarga.getStatus?.();
+
+            if (status && !status.isAccepted()) {
+                throw new Error(`El SAT no permitió descargar el paquete: ${status.getMessage?.() || 'Sin detalle'}`);
+            }
+
             return descarga.getPackageContent();
         } catch (error: any) {
             console.error('Error en descargarPaquete:', error);
