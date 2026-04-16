@@ -237,6 +237,13 @@ export default function DashboardPage() {
               <Link href="/cotizaciones" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 px-5 py-4 text-blue-100 hover:bg-white/10 font-medium border-b border-blue-500/30">
                 <FileCheck className="w-5 h-5" /> Cotizaciones
               </Link>
+              {/* NUEVOS ENLACES DE NÓMINA MÓVIL */}
+              <Link href="/empleados" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 px-5 py-4 text-blue-100 hover:bg-white/10 font-medium border-b border-blue-500/30">
+                <Users className="w-5 h-5" /> Empleados
+              </Link>
+              <Link href="/nomina/facturacion-masiva" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 px-5 py-4 text-blue-100 hover:bg-white/10 font-medium border-b border-blue-500/30">
+                <FileText className="w-5 h-5" /> Nómina Masiva
+              </Link>
               <button
                 onClick={handleLogout}
                 className="flex items-center gap-3 px-5 py-4 text-red-300 hover:bg-white/10 font-medium border-b border-blue-500/30 text-left w-full"
@@ -289,6 +296,19 @@ export default function DashboardPage() {
             <h3 className="text-lg sm:text-xl font-bold text-slate-800">Cotizaciones</h3>
             <p className="text-slate-500 text-xs sm:text-sm mt-1">Gestionar y convertir a facturas.</p>
           </Link>
+
+          <Link href="/empleados" className="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border-l-4 border-l-slate-400 border border-slate-200 hover:shadow-md transition-all group">
+            <div className="mb-4"><div className="bg-slate-50 p-2.5 rounded-xl inline-block"><FileCheck className="w-6 h-6 sm:w-8 sm:h-8 text-slate-600" /></div></div>
+            <h3 className="text-lg sm:text-xl font-bold text-slate-800">Empleados</h3>
+            <p className="text-slate-500 text-xs sm:text-sm mt-1">Gestion de empleados.</p>
+          </Link>
+
+          <Link href="/nomina/facturacion-masiva" className="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border-l-4 border-l-slate-400 border border-slate-200 hover:shadow-md transition-all group">
+            <div className="mb-4"><div className="bg-slate-50 p-2.5 rounded-xl inline-block"><FileCheck className="w-6 h-6 sm:w-8 sm:h-8 text-slate-600" /></div></div>
+            <h3 className="text-lg sm:text-xl font-bold text-slate-800">Nomina masiva</h3>
+            <p className="text-slate-500 text-xs sm:text-sm mt-1">Timbrado de recibos de nómina en lote.</p>
+          </Link>
+
 
           <Link href="/facturas/global" className="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border-l-4 border-l-indigo-500 border border-slate-200 hover:shadow-md transition-all group">
             <div className="mb-4">

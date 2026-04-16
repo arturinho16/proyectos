@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckCircle2, AlertCircle, FileText, Loader2 } from "lucide-react";
+import { CheckCircle2, AlertCircle, FileText, Loader2, ArrowLeft } from "lucide-react";
+import Link from "next/link";
 
-// Tipado simulado para la vista
 interface ReciboPendiente {
     id: string;
     empleado: string;
@@ -16,7 +16,6 @@ export default function FacturacionMasivaPage() {
     const [isProcessing, setIsProcessing] = useState(false);
     const [resultados, setResultados] = useState<any[]>([]);
 
-    // Datos mockeados (En producción, harías un fetch a /api/nomina/recibos?estado=BORRADOR)
     const [recibos, setRecibos] = useState<ReciboPendiente[]>([
         { id: "1", empleado: "JUAN PEREZ", rfc: "PEPJ800101XXX", totalNeto: 5400.00, estado: "BORRADOR" },
         { id: "2", empleado: "MARIA GOMEZ", rfc: "GOMM850202XXX", totalNeto: 6200.50, estado: "BORRADOR" },
@@ -32,7 +31,6 @@ export default function FacturacionMasivaPage() {
         const recibosIds = recibos.map(r => r.id);
 
         try {
-            // Llamada al endpoint creado en el paso anterior
             const res = await fetch("/api/nomina/timbrado-masivo", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -43,7 +41,6 @@ export default function FacturacionMasivaPage() {
 
             if (res.ok) {
                 setResultados(data.resultados);
-                // Actualizamos estado visual de la tabla
                 setRecibos(prev => prev.map(r => ({ ...r, estado: "TIMBRADO" })));
                 alert("Proceso de timbrado masivo finalizado.");
             } else {
@@ -58,80 +55,85 @@ export default function FacturacionMasivaPage() {
     };
 
     return (
-        <div className="p-6 bg-gray-50 min-h-screen">
+        <div className="p-6 bg-slate-50 min-h-screen">
             <div className="max-w-5xl mx-auto">
 
-                {/* Encabezado */}
+                {/* BOTÓN DE REGRESO AL DASHBOARD */}
+                <div className="mb-4">
+                    <Link href="/" className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-blue-600 transition-colors">
+                        <ArrowLeft size={18} />
+                        Regresar al Panel
+                    </Link>
+                </div>
+
                 <div className="mb-6 flex justify-between items-end">
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                            <FileText className="text-cyan-600" />
-                            Facturación Masiva de Nómina
+                        <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 flex items-center gap-3">
+                            <FileText className="text-fuchsia-600" />
+                            Nómina Masiva
                         </h1>
-                        <p className="text-sm text-gray-500 mt-1">Selecciona el periodo y timbra todos los recibos en una sola acción.</p>
+                        <p className="text-sm text-slate-500 mt-1">Selecciona el periodo y timbra todos los recibos en una sola acción.</p>
                     </div>
                     <div className="text-right">
-                        <p className="text-sm font-medium text-gray-600">Fecha de emisión sugerida:</p>
-                        <p className="text-lg font-bold text-gray-900">{new Date().toLocaleDateString()}</p>
+                        <p className="text-sm font-bold text-slate-500">Fecha de emisión sugerida:</p>
+                        <p className="text-lg font-bold text-slate-800">{new Date().toLocaleDateString()}</p>
                     </div>
                 </div>
 
-                {/* Panel de Acción */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de proceso:</label>
-                            <select className="w-full border border-gray-300 rounded-md p-2 focus:ring-cyan-500 focus:border-cyan-500">
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Tipo de proceso:</label>
+                            <select className="w-full border border-slate-200 rounded-xl p-3 focus:ring-blue-500 focus:border-blue-500 outline-none text-slate-700 font-medium bg-slate-50">
                                 <option value="facturacion">Timbrado (Facturación)</option>
                                 <option value="cancelacion">Cancelación Masiva</option>
                             </select>
                         </div>
 
                         <div className="text-center">
-                            <p className="text-sm text-gray-500">Recibos en cola</p>
-                            <p className="text-3xl font-bold text-cyan-600">{recibos.length}</p>
+                            <p className="text-sm font-bold text-slate-400 uppercase tracking-wide">Recibos en cola</p>
+                            <p className="text-4xl font-bold text-blue-600 mt-1">{recibos.length}</p>
                         </div>
 
                         <div className="flex justify-end">
                             <button
                                 onClick={handleProcesoMasivo}
                                 disabled={isProcessing || recibos.length === 0}
-                                className={`flex items-center gap-2 px-6 py-3 rounded-md font-medium text-white transition-all shadow-sm
-                  ${isProcessing || recibos.length === 0 ? "bg-gray-400 cursor-not-allowed" : "bg-cyan-500 hover:bg-cyan-600"}
+                                className={`flex items-center gap-2 px-6 py-3.5 rounded-xl font-bold text-white transition-all shadow-md
+                  ${isProcessing || recibos.length === 0 ? "bg-slate-400 shadow-none cursor-not-allowed" : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"}
                 `}
                             >
                                 {isProcessing ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />}
-                                Empezar con el proceso
+                                Empezar proceso
                             </button>
                         </div>
                     </div>
 
-                    <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800 flex items-start gap-2">
-                        <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                    <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800 flex items-start gap-3">
+                        <AlertCircle size={20} className="mt-0.5 shrink-0 text-amber-600" />
                         <p><strong>IMPORTANTE:</strong> Asegúrate de que los datos del periodo (días pagados, salarios e impuestos calculados) sean correctos antes de iniciar el proceso. Esta acción consumirá timbres de tu paquete Finkok.</p>
                     </div>
                 </div>
 
-                {/* Tabla de Resultados / Borradores */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <table className="w-full text-sm text-left">
-                        <thead className="bg-gray-100 text-gray-600 border-b uppercase text-xs">
+                        <thead className="bg-slate-50 text-slate-500 border-b border-slate-100 uppercase text-xs">
                             <tr>
-                                <th className="px-6 py-3">Empleado</th>
-                                <th className="px-6 py-3">RFC</th>
-                                <th className="px-6 py-3 text-right">Neto a Pagar</th>
-                                <th className="px-6 py-3 text-center">Estado</th>
+                                <th className="px-6 py-4 font-bold">Empleado</th>
+                                <th className="px-6 py-4 font-bold">RFC</th>
+                                <th className="px-6 py-4 font-bold text-right">Neto a Pagar</th>
+                                <th className="px-6 py-4 font-bold text-center">Estado</th>
                             </tr>
                         </thead>
                         <tbody>
                             {recibos.map((recibo) => (
-                                <tr key={recibo.id} className="border-b hover:bg-gray-50">
-                                    <td className="px-6 py-4 font-medium text-gray-800">{recibo.empleado}</td>
-                                    <td className="px-6 py-4">{recibo.rfc}</td>
-                                    <td className="px-6 py-4 text-right font-medium">${recibo.totalNeto.toFixed(2)}</td>
+                                <tr key={recibo.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                    <td className="px-6 py-4 font-bold text-slate-800">{recibo.empleado}</td>
+                                    <td className="px-6 py-4 text-slate-600">{recibo.rfc}</td>
+                                    <td className="px-6 py-4 text-right font-bold text-slate-900">${recibo.totalNeto.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-center">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium border
-                      ${recibo.estado === 'BORRADOR' ? 'bg-gray-100 text-gray-600 border-gray-200' : ''}
+                                        <span className={`px-3 py-1 rounded-full text-xs font-bold border
+                      ${recibo.estado === 'BORRADOR' ? 'bg-slate-100 text-slate-600 border-slate-200' : ''}
                       ${recibo.estado === 'TIMBRADO' ? 'bg-green-100 text-green-700 border-green-200' : ''}
                       ${recibo.estado === 'ERROR' ? 'bg-red-100 text-red-700 border-red-200' : ''}
                     `}>
@@ -144,18 +146,16 @@ export default function FacturacionMasivaPage() {
                     </table>
                 </div>
 
-                {/* Consola de Resultados Reales (Se muestra al terminar) */}
                 {resultados.length > 0 && (
-                    <div className="mt-6 bg-gray-900 rounded-lg p-4 text-green-400 font-mono text-sm overflow-auto h-48 shadow-inner">
-                        <p className="text-white mb-2 border-b border-gray-700 pb-2">--- LOG DE TIMBRADO MÚLTIPLE ---</p>
+                    <div className="mt-6 bg-slate-900 rounded-2xl p-5 text-emerald-400 font-mono text-sm overflow-auto h-48 shadow-inner border border-slate-800">
+                        <p className="text-slate-400 mb-3 border-b border-slate-800 pb-2 font-bold tracking-widest text-xs uppercase">LOG DE TIMBRADO MÚLTIPLE</p>
                         {resultados.map((res, i) => (
-                            <div key={i} className={res.status === 'Error' ? 'text-red-400' : 'text-green-400'}>
-                                [{new Date().toLocaleTimeString()}] Empleado {res.empleado}: {res.status} {res.uuid ? `UUID: ${res.uuid}` : `- ${res.mensaje}`}
+                            <div key={i} className={`mb-1 ${res.status === 'Error' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                <span className="text-slate-500">[{new Date().toLocaleTimeString()}]</span> Empleado {res.empleado}: {res.status} {res.uuid ? `UUID: ${res.uuid}` : `- ${res.mensaje}`}
                             </div>
                         ))}
                     </div>
                 )}
-
             </div>
         </div>
     );
