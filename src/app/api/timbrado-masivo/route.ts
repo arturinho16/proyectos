@@ -1,58 +1,133 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generarXMLNomina } from '@/lib/sat/timbrarNomina';
-import { timbrarFactura } from '@/lib/sat/timbrar'; // Aprovechando tu lógica de Finkok
-import { getNoCertificado, getCertificadoBase64 } from '@/lib/sat/firmar';
+import { buildCadenaOriginal } from '@/lib/sat/timbrar';
+import { getNoCertificado, getCertificadoBase64, keyToPem, generarSello } from '@/lib/sat/firmar';
+import * as soap from 'soap';
+
+const WSDL_DEMO = 'https://demo-facturacion.finkok.com/servicios/soap/stamp.wsdl';
+const WSDL_PROD = 'https://facturacion.finkok.com/servicios/soap/stamp.wsdl';
 
 export async function POST(req: Request) {
     try {
-        const { recibosIds } = await req.json(); // Array de IDs de ReciboNomina a timbrar
+        const { recibosIds } = await req.json();
 
+        // 1. Obtener recibos con TODO su detalle (Relaciones de Prisma)
         const recibos = await prisma.reciboNomina.findMany({
             where: { id: { in: recibosIds }, estado: 'BORRADOR' },
-            include: { empleado: true }
+            include: {
+                empleado: true,
+                percepciones: true,
+                deducciones: true
+            }
         });
 
+        if (recibos.length === 0) {
+            return NextResponse.json({ message: 'No hay recibos válidos en estado BORRADOR.' }, { status: 400 });
+        }
+
+        // 2. Extraer CSD de las variables de entorno
         const cerB64 = process.env.CSD_CERTIFICADO_B64!;
+        const keyB64 = process.env.CSD_LLAVE_B64!;
+        const passwordCSD = process.env.CSD_PASSWORD!;
+
         const noCertificado = getNoCertificado(cerB64);
         const certificadoB64 = getCertificadoBase64(cerB64);
+        const keyPem = keyToPem(keyB64, passwordCSD);
+
+        // 3. Configuración de Finkok
+        const usuarioFinkok = process.env.FINKOK_USER || process.env.FINKOK_USUARIO!;
+        const passwordFinkok = process.env.FINKOK_PASSWORD!;
+        const ambiente = process.env.FINKOK_AMBIENTE || 'demo';
+        const wsdl = ambiente === 'demo' ? WSDL_DEMO : WSDL_PROD;
+
+        // 🔥 OPTIMIZACIÓN: Creamos el cliente SOAP una sola vez para toda la tanda
+        const client = await soap.createClientAsync(wsdl);
 
         const resultados = [];
 
+        // 4. Iterar sobre cada recibo para firmar y timbrar
         for (const recibo of recibos) {
             try {
-                // 1. Generar XML
+                // A) Generar el XML crudo (la función que hicimos en el Paso 2)
                 const xmlUnsigned = generarXMLNomina(recibo, recibo.empleado, noCertificado, certificadoB64);
 
-                // 2. Firmar y Timbrar (Ajusta la función timbrarFactura para aceptar el XML crudo o envuélvelo)
-                // const { uuid, xmlTimbrado } = await timbrarConFinkok(xmlUnsigned); 
+                // B) Generar Cadena Original y Sello Criptográfico
+                const cadenaOriginal = await buildCadenaOriginal(xmlUnsigned);
+                const sello = generarSello(cadenaOriginal, keyPem);
 
-                // SIMULACIÓN (Aquí llamas a tu función de Finkok real)
-                const uuid = `MOCK-UUID-${recibo.id}`;
-                const xmlTimbrado = `<xml>...</xml>`;
+                // C) Inyectar el sello en el nodo principal del XML
+                const xmlFirmado = xmlUnsigned.replace('Sello=""', `Sello="${sello}"`);
 
-                // 3. Guardar en Base de Datos
+                // D) Petición a Finkok
+                const xmlBase64 = Buffer.from(xmlFirmado, 'utf-8').toString('base64');
+                const [result] = await client.stampAsync({
+                    xml: xmlBase64,
+                    username: usuarioFinkok,
+                    password: passwordFinkok
+                });
+
+                const stampResult = result?.stampResult;
+
+                // E) Manejo estricto de errores del SAT / Finkok
+                if (!stampResult || !stampResult.UUID) {
+                    const incidencias = stampResult?.Incidencias?.Incidencia;
+                    const incidencia = Array.isArray(incidencias) ? incidencias[0] : incidencias;
+                    throw new Error(`Rechazo SAT/Finkok: ${incidencia?.MensajeIncidencia || stampResult?.CodEstatus || 'Error desconocido'}`);
+                }
+
+                // F) Limpieza del XML de retorno (Finkok a veces devuelve Base64 o caracteres invisibles BOM)
+                let xmlFinal = stampResult.xml;
+                if (Buffer.isBuffer(xmlFinal)) xmlFinal = xmlFinal.toString('utf-8');
+                else if (typeof xmlFinal !== 'string') xmlFinal = String(xmlFinal);
+
+                if (!xmlFinal.includes('cfdi:Comprobante')) {
+                    const decodificado = Buffer.from(xmlFinal, 'base64').toString('utf-8');
+                    if (decodificado.includes('cfdi:Comprobante')) xmlFinal = decodificado;
+                }
+                xmlFinal = xmlFinal.replace(/^\uFEFF/, '').trim();
+
+                // G) Persistencia en Base de Datos (ÉXITO)
                 await prisma.reciboNomina.update({
                     where: { id: recibo.id },
                     data: {
                         estado: 'TIMBRADO',
-                        uuid: uuid,
-                        xmlTimbrado: xmlTimbrado
+                        uuid: stampResult.UUID,
+                        xmlTimbrado: xmlFinal,
+                        mensajeError: null // Limpiamos errores previos si los hubo
                     }
                 });
 
-                resultados.push({ empleado: recibo.empleado.numEmpleado, status: 'Exito', uuid });
+                resultados.push({
+                    empleado: recibo.empleado.numEmpleado,
+                    nombre: `${recibo.empleado.nombre} ${recibo.empleado.apellidoPaterno}`,
+                    status: 'Exito',
+                    uuid: stampResult.UUID
+                });
+
             } catch (error: any) {
+                // H) Persistencia de Errores (Evita que un recibo malo tire toda la nómina)
                 await prisma.reciboNomina.update({
                     where: { id: recibo.id },
-                    data: { estado: 'ERROR', mensajeError: error.message }
+                    data: {
+                        estado: 'ERROR',
+                        mensajeError: error.message
+                    }
                 });
-                resultados.push({ empleado: recibo.empleado.numEmpleado, status: 'Error', mensaje: error.message });
+
+                resultados.push({
+                    empleado: recibo.empleado.numEmpleado,
+                    nombre: recibo.empleado.nombre,
+                    status: 'Error',
+                    mensaje: error.message
+                });
             }
         }
 
         return NextResponse.json({ message: 'Proceso de timbrado finalizado', resultados });
+
     } catch (error: any) {
+        console.error("Error crítico en controlador de timbrado masivo:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

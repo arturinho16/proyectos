@@ -377,23 +377,53 @@ model ReciboNomina {
   empleadoId          String
   empleado            Empleado @relation(fields: [empleadoId], references: [id])
   
-  // Datos del Recibo
+  // Fechas y periodo
   fechaPago           DateTime
   fechaInicialPago    DateTime
   fechaFinalPago      DateTime
   numDiasPagados      Decimal  @db.Decimal(5, 2)
   
-  // Totales
+  // Totales (Requeridos por CFDI)
   totalPercepciones   Decimal  @default(0) @db.Decimal(15, 2)
   totalDeducciones    Decimal  @default(0) @db.Decimal(15, 2)
+  totalOtrosPagos     Decimal  @default(0) @db.Decimal(15, 2) // Opcional, util si hay subsidio
   totalNeto           Decimal  @default(0) @db.Decimal(15, 2)
   
-  // CFDI
+  // Control de Timbrado
   uuid                String?  @unique
-  xmlTimbrado         String?
+  xmlTimbrado         String?  @db.Text // Importante usar @db.Text para que quepa el XML completo
   estado              String   @default("BORRADOR") // TIMBRADO, CANCELADO, ERROR
-  mensajeError        String?
+  mensajeError        String?  @db.Text
+  
+  // Relaciones hacia el detalle del recibo
+  percepciones        NominaPercepcion[]
+  deducciones         NominaDeduccion[]
 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+}
+
+model NominaPercepcion {
+  id              String       @id @default(uuid())
+  reciboId        String
+  recibo          ReciboNomina @relation(fields: [reciboId], references: [id], onDelete: Cascade)
+  
+  tipoPercepcion  String       // Catálogo SAT c_TipoPercepcion (Ej. 001 - Sueldos)
+  clave           String       // Clave interna de tu empresa (Ej. SDO)
+  concepto        String       // Descripción libre (Ej. "Sueldo Quincenal")
+  
+  importeGravado  Decimal      @default(0) @db.Decimal(15, 2)
+  importeExento   Decimal      @default(0) @db.Decimal(15, 2)
+}
+
+model NominaDeduccion {
+  id              String       @id @default(uuid())
+  reciboId        String
+  recibo          ReciboNomina @relation(fields: [reciboId], references: [id], onDelete: Cascade)
+  
+  tipoDeduccion   String       // Catálogo SAT c_TipoDeduccion (Ej. 002 - ISR)
+  clave           String       // Clave interna (Ej. ISR01)
+  concepto        String       // Descripción libre (Ej. "Retención de ISR")
+  
+  importe         Decimal      @db.Decimal(15, 2)
 }

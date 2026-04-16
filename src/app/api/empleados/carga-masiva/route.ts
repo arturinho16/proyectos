@@ -1,75 +1,59 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+// ==========================================
+// GET: Listar todos los empleados
+// ==========================================
+export async function GET() {
+    try {
+        const empleados = await prisma.empleado.findMany({
+            orderBy: { createdAt: 'desc' }
+        });
+        return NextResponse.json(empleados);
+    } catch (error: any) {
+        console.error("Error obteniendo empleados:", error);
+        return NextResponse.json({ error: 'Error al obtener los empleados' }, { status: 500 });
+    }
+}
+
+// ==========================================
+// POST: Crear un nuevo empleado
+// ==========================================
 export async function POST(req: Request) {
     try {
-        const formData = await req.formData();
-        const file = formData.get('file') as File;
+        const body = await req.json();
 
-        if (!file) {
-            return NextResponse.json({ error: 'No se subió ningún archivo' }, { status: 400 });
-        }
+        // Parseo de datos estrictos para Prisma y el SAT
+        // Aseguramos que las fechas sean objetos Date y los salarios sean numéricos
+        const dataParaGuardar = {
+            ...body,
+            fechaRelacionLaboral: new Date(body.fechaRelacionLaboral),
+            salario: Number(body.salario),
+            salarioCuotas: Number(body.salarioCuotas),
+            // Si mandan campos vacíos en strings opcionales, los pasamos a null
+            nss: body.nss || null,
+            email: body.email || null,
+        };
 
-        const text = await file.text();
-        const rows = text.split('\n').map(row => row.trim()).filter(row => row);
+        const nuevoEmpleado = await prisma.empleado.create({
+            data: dataParaGuardar
+        });
 
-        // Quitar la cabecera
-        const headers = rows.shift();
-        const empleadosParaInsertar = [];
+        return NextResponse.json(nuevoEmpleado, { status: 201 });
 
-        for (const row of rows) {
-            // Manejo básico de CSV (para casos con comas en campos se recomienda usar una librería como 'csv-parse')
-            const cols = row.split(',');
-
-            if (cols.length < 30) continue;
-
-            empleadosParaInsertar.push({
-                nombre: cols[0],
-                apellidoPaterno: cols[1],
-                apellidoMaterno: cols[2] || null,
-                curp: cols[3],
-                nss: cols[4] || null,
-                rfc: cols[5],
-                calle: cols[6],
-                colonia: cols[7],
-                numExterior: cols[8],
-                numInterior: cols[9] || null,
-                cp: cols[10],
-                localidad: cols[11] || null,
-                municipio: cols[12],
-                estado: cols[13],
-                email: cols[14],
-                grupo: cols[15],
-                sucursal: cols[16],
-                fechaRelacionLaboral: new Date(cols[17]), // Formato debe ser YYYY-MM-DD
-                salario: parseFloat(cols[18] || '0'),
-                salarioCuotas: parseFloat(cols[19] || '0'),
-                contrato: cols[20], // Ej: 01
-                regimenContratacion: cols[21], // Ej: 02
-                riesgoPuesto: cols[22], // Ej: 1
-                tipoJornada: cols[23], // Ej: 01
-                banco: cols[24] || null,
-                clabe: cols[25] || null,
-                periodicidad: cols[26], // Ej: 04 (Quincenal)
-                departamento: cols[27],
-                puesto: cols[28],
-                numEmpleado: cols[29],
-            });
-        }
-
-        // Inserción transaccional masiva
-        const creados = await prisma.$transaction(
-            empleadosParaInsertar.map(emp =>
-                prisma.empleado.upsert({
-                    where: { rfc: emp.rfc },
-                    update: emp,
-                    create: emp
-                })
-            )
-        );
-
-        return NextResponse.json({ message: `Se procesaron ${creados.length} empleados con éxito.` });
     } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        console.error("Error creando empleado:", error);
+
+        // P2002 es el código de Prisma cuando se viola una restricción UNIQUE (@unique)
+        // En tu schema.prisma tienes @unique en curp, rfc y numEmpleado
+        if (error.code === 'P2002') {
+            const target = error.meta?.target as string[];
+            return NextResponse.json(
+                { error: `Ya existe un empleado registrado con ese mismo ${target ? target.join(', ') : 'dato único (RFC, CURP o Num Empleado)'}.` },
+                { status: 400 }
+            );
+        }
+
+        return NextResponse.json({ error: error.message || 'Error interno del servidor' }, { status: 500 });
     }
 }

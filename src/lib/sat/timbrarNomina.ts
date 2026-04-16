@@ -1,10 +1,12 @@
 import { create } from 'xmlbuilder2';
-import * as soap from 'soap';
-import { keyToPem, getNoCertificado, getCertificadoBase64, generarSello } from './firmar';
-import { buildCadenaOriginal } from './timbrar'; // Reutilizamos tu función de XSLT
 
-export function generarXMLNomina(datosRecibo: any, empleado: any, noCertificado: string, certificadoB64: string): string {
-    // Configuración base obligatoria para Nómina 1.2 en CFDI 4.0
+export function generarXMLNomina(
+    datosRecibo: any,
+    empleado: any,
+    noCertificado: string,
+    certificadoB64: string
+): string {
+    // 1. NODO PRINCIPAL (Comprobante)
     const root = create({ version: '1.0', encoding: 'UTF-8' })
         .ele('cfdi:Comprobante', {
             'xmlns:cfdi': 'http://www.sat.gob.mx/cfd/4',
@@ -13,13 +15,13 @@ export function generarXMLNomina(datosRecibo: any, empleado: any, noCertificado:
             'xsi:schemaLocation': 'http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd http://www.sat.gob.mx/nomina12 http://www.sat.gob.mx/sitio_internet/cfd/nomina/nomina12.xsd',
             Version: '4.0',
             Serie: 'NOM',
-            Folio: datosRecibo.id.split('-')[0], // Folio interno
-            Fecha: new Date().toISOString().split('.')[0], // Formato YYYY-MM-DDTHH:mm:ss
+            Folio: datosRecibo.id.split('-')[0], // Folio acortado
+            Fecha: datosRecibo.fechaPago.toISOString().split('.')[0], // Formato SAT
             Sello: '',
             NoCertificado: noCertificado,
             Certificado: certificadoB64,
             SubTotal: datosRecibo.totalPercepciones.toFixed(2),
-            Descuento: datosRecibo.totalDeducciones.toFixed(2),
+            Descuento: datosRecibo.totalDeducciones > 0 ? datosRecibo.totalDeducciones.toFixed(2) : undefined,
             Moneda: 'MXN',
             Total: datosRecibo.totalNeto.toFixed(2),
             TipoDeComprobante: 'N', // N = Nómina
@@ -28,37 +30,36 @@ export function generarXMLNomina(datosRecibo: any, empleado: any, noCertificado:
             LugarExpedicion: process.env.EMISOR_CP || '00000',
         });
 
-    // Emisor
+    // 2. EMISOR Y RECEPTOR DEL CFDI
     root.ele('cfdi:Emisor', {
-        Rfc: process.env.EMISOR_RFC,
-        Nombre: process.env.EMISOR_NOMBRE,
-        RegimenFiscal: process.env.EMISOR_REGIMEN_FISCAL
+        Rfc: process.env.EMISOR_RFC || 'EKU9003173C9', // Default a CSD de prueba SAT
+        Nombre: process.env.EMISOR_NOMBRE || 'EMPRESA DE PRUEBA',
+        RegimenFiscal: process.env.EMISOR_REGIMEN_FISCAL || '601'
     }).up();
 
-    // Receptor
     root.ele('cfdi:Receptor', {
         Rfc: empleado.rfc,
-        Nombre: `${empleado.nombre} ${empleado.apellidoPaterno} ${empleado.apellidoMaterno || ''}`.trim(),
+        Nombre: `${empleado.nombre} ${empleado.apellidoPaterno} ${empleado.apellidoMaterno || ''}`.trim().toUpperCase(),
         DomicilioFiscalReceptor: empleado.cp,
         RegimenFiscalReceptor: '605', // 605 = Sueldos y Salarios
         UsoCFDI: 'CN01' // CN01 = Nómina
     }).up();
 
-    // Concepto de Nómina Obligatorio
+    // 3. CONCEPTO REQUERIDO POR EL SAT PARA NÓMINA
     root.ele('cfdi:Conceptos')
         .ele('cfdi:Concepto', {
-            ClaveProdServ: '84111505', // Servicios de contabilidad de sueldos y salarios
+            ClaveProdServ: '84111505',
             Cantidad: '1',
-            ClaveUnidad: 'ACT', // Actividad
+            ClaveUnidad: 'ACT',
             Descripcion: 'Pago de nómina',
             ValorUnitario: datosRecibo.totalPercepciones.toFixed(2),
             Importe: datosRecibo.totalPercepciones.toFixed(2),
-            Descuento: datosRecibo.totalDeducciones.toFixed(2),
-            ObjetoImp: '01' // No objeto de impuesto
+            Descuento: datosRecibo.totalDeducciones > 0 ? datosRecibo.totalDeducciones.toFixed(2) : undefined,
+            ObjetoImp: '01'
         }).up()
         .up();
 
-    // COMPLEMENTO DE NÓMINA 1.2
+    // 4. COMPLEMENTO DE NÓMINA 1.2
     const complemento = root.ele('cfdi:Complemento')
         .ele('nomina12:Nomina', {
             Version: '1.2',
@@ -66,36 +67,95 @@ export function generarXMLNomina(datosRecibo: any, empleado: any, noCertificado:
             FechaPago: datosRecibo.fechaPago.toISOString().split('T')[0],
             FechaInicialPago: datosRecibo.fechaInicialPago.toISOString().split('T')[0],
             FechaFinalPago: datosRecibo.fechaFinalPago.toISOString().split('T')[0],
-            NumDiasPagados: datosRecibo.numDiasPagados.toFixed(3),
-            TotalPercepciones: datosRecibo.totalPercepciones.toFixed(2),
-            TotalDeducciones: datosRecibo.totalDeducciones.toFixed(2),
+            NumDiasPagados: Number(datosRecibo.numDiasPagados).toFixed(3),
+            TotalPercepciones: datosRecibo.totalPercepciones > 0 ? datosRecibo.totalPercepciones.toFixed(2) : undefined,
+            TotalDeducciones: datosRecibo.totalDeducciones > 0 ? datosRecibo.totalDeducciones.toFixed(2) : undefined,
+            // TotalOtrosPagos iría aquí si lo manejas
         });
 
-    // Datos del Empleador dentro del complemento
-    complemento.ele('nomina12:Emisor', { RegistroPatronal: process.env.REGISTRO_PATRONAL }).up();
+    complemento.ele('nomina12:Emisor', {
+        RegistroPatronal: process.env.REGISTRO_PATRONAL || '00000000000'
+    }).up();
 
-    // Datos del Trabajador dentro del complemento
     complemento.ele('nomina12:Receptor', {
         Curp: empleado.curp,
         NumSeguridadSocial: empleado.nss,
         FechaInicioRelLaboral: empleado.fechaRelacionLaboral.toISOString().split('T')[0],
-        Antiguedad: 'P100W', // Se debe calcular en formato ISO8601 (Ej. P100W = 100 semanas)
-        TipoContrato: empleado.contrato, // Ej. '01' [cite: 283]
+        Antiguedad: 'P100W', // OJO: Debes calcular esto en ISO8601 real (Ej. semanas trabajadas)
+        TipoContrato: empleado.contrato,
         Sindicalizado: 'No',
-        TipoJornada: empleado.tipoJornada, // Ej. '01' [cite: 292]
+        TipoJornada: empleado.tipoJornada,
         TipoRegimen: empleado.regimenContratacion,
         NumEmpleado: empleado.numEmpleado,
-        Departamento: empleado.departamento,
-        Puesto: empleado.puesto,
-        RiesgoPuesto: empleado.riesgoPuesto,
-        PeriodicidadPago: empleado.periodicidad, // Ej. '04' [cite: 159]
-        SalarioBaseCotApor: empleado.salarioCuotas.toFixed(2),
-        SalarioDiarioIntegrado: empleado.salarioCuotas.toFixed(2),
-        ClaveEntFed: empleado.estado // Catálogo SAT de Estados
+        Departamento: empleado.departamento || 'General',
+        Puesto: empleado.puesto || 'Empleado',
+        RiesgoPuesto: empleado.riesgoPuesto || '1',
+        PeriodicidadPago: empleado.periodicidad,
+        SalarioBaseCotApor: Number(empleado.salarioCuotas).toFixed(2),
+        SalarioDiarioIntegrado: Number(empleado.salarioCuotas).toFixed(2),
+        ClaveEntFed: empleado.estado || 'MEX' // Clave SAT del estado
     }).up();
 
-    // AQUI IRÍAN LOS NODOS DE PERCEPCIONES Y DEDUCCIONES (Se deben iterar según la base de datos)
-    // ... (Percepciones: Sueldo, Bonos. Deducciones: ISR, IMSS)
+    // 5. NODO PERCEPCIONES (Iteración Dinámica)
+    if (datosRecibo.percepciones && datosRecibo.percepciones.length > 0) {
+        let totalSueldos = 0;
+        let totalGravado = 0;
+        let totalExento = 0;
+
+        // Sumatoria estricta
+        datosRecibo.percepciones.forEach((p: any) => {
+            totalGravado += Number(p.importeGravado);
+            totalExento += Number(p.importeExento);
+            totalSueldos += (Number(p.importeGravado) + Number(p.importeExento));
+        });
+
+        const percepcionesNode = complemento.ele('nomina12:Percepciones', {
+            TotalSueldos: totalSueldos.toFixed(2),
+            TotalGravado: totalGravado.toFixed(2),
+            TotalExento: totalExento.toFixed(2)
+        });
+
+        datosRecibo.percepciones.forEach((p: any) => {
+            percepcionesNode.ele('nomina12:Percepcion', {
+                TipoPercepcion: p.tipoPercepcion,
+                Clave: p.clave,
+                Concepto: p.concepto,
+                ImporteGravado: Number(p.importeGravado).toFixed(2),
+                ImporteExento: Number(p.importeExento).toFixed(2)
+            }).up();
+        });
+        percepcionesNode.up();
+    }
+
+    // 6. NODO DEDUCCIONES (Clasificación obligatoria del SAT)
+    if (datosRecibo.deducciones && datosRecibo.deducciones.length > 0) {
+        let totalImpuestosRetenidos = 0;
+        let totalOtrasDeducciones = 0;
+
+        datosRecibo.deducciones.forEach((d: any) => {
+            if (d.tipoDeduccion === '002') { // 002 = ISR
+                totalImpuestosRetenidos += Number(d.importe);
+            } else {
+                totalOtrasDeducciones += Number(d.importe);
+            }
+        });
+
+        const atributosDeducciones: any = {};
+        if (totalImpuestosRetenidos > 0) atributosDeducciones.TotalImpuestosRetenidos = totalImpuestosRetenidos.toFixed(2);
+        if (totalOtrasDeducciones > 0) atributosDeducciones.TotalOtrasDeducciones = totalOtrasDeducciones.toFixed(2);
+
+        const deduccionesNode = complemento.ele('nomina12:Deducciones', atributosDeducciones);
+
+        datosRecibo.deducciones.forEach((d: any) => {
+            deduccionesNode.ele('nomina12:Deduccion', {
+                TipoDeduccion: d.tipoDeduccion,
+                Clave: d.clave,
+                Concepto: d.concepto,
+                Importe: Number(d.importe).toFixed(2)
+            }).up();
+        });
+        deduccionesNode.up();
+    }
 
     return root.end({ prettyPrint: false });
 }
