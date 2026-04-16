@@ -1,193 +1,227 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import { Search, Plus, UploadCloud, Users, ArrowLeft, Download, Loader2 } from "lucide-react";
-import Link from "next/link";
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
 
 export default function EmpleadosPage() {
     const [empleados, setEmpleados] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [isUploading, setIsUploading] = useState(false);
-    const [searchTerm, setSearchTerm] = useState("");
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [error, setError] = useState<string | null>(null);
 
-    // Carga de datos productiva
+    // Estados para Paginación
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 20;
+
+    // Estado para Selección (Checkboxes)
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
     useEffect(() => {
-        fetchEmpleados();
+        fetch('/api/empleados')
+            .then(res => {
+                if (!res.ok) throw new Error("Error al cargar la lista de empleados");
+                return res.json();
+            })
+            .then(data => {
+                setEmpleados(data);
+                setLoading(false);
+            })
+            .catch(err => {
+                setError(err.message);
+                setLoading(false);
+            });
     }, []);
 
-    const fetchEmpleados = async () => {
-        setLoading(true);
-        try {
-            // Se asume que crearás este endpoint (GET)
-            const res = await fetch("/api/empleados");
-            if (res.ok) {
-                const data = await res.json();
-                setEmpleados(data);
-            }
-        } catch (error) {
-            console.error("Error al cargar empleados:", error);
-        } finally {
-            setLoading(false);
+    // ==========================================
+    // Lógica de Paginación
+    // ==========================================
+    const indexOfLastItem = currentPage * itemsPerPage;
+    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+    const currentEmpleados = empleados.slice(indexOfFirstItem, indexOfLastItem);
+    const totalPages = Math.ceil(empleados.length / itemsPerPage);
+
+    // ==========================================
+    // Lógica de Selección
+    // ==========================================
+    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.checked) {
+            // Selecciona todos los de la página actual
+            setSelectedIds(currentEmpleados.map(emp => emp.id));
+        } else {
+            setSelectedIds([]);
         }
     };
 
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        setIsUploading(true);
-        const formData = new FormData();
-        formData.append("file", file);
-
-        try {
-            const res = await fetch("/api/empleados/carga-masiva", {
-                method: "POST",
-                body: formData,
-            });
-
-            const data = await res.json();
-            if (res.ok) {
-                alert(`Éxito: ${data.message}`);
-                fetchEmpleados(); // Recargar la tabla tras la subida masiva
-            } else {
-                alert(`Error: ${data.error}`);
-            }
-        } catch (error) {
-            console.error("Error subiendo archivo:", error);
-            alert("Hubo un error al procesar el archivo CSV.");
-        } finally {
-            setIsUploading(false);
-            if (fileInputRef.current) fileInputRef.current.value = "";
+    const handleSelect = (id: string) => {
+        if (selectedIds.includes(id)) {
+            setSelectedIds(selectedIds.filter(selectedId => selectedId !== id));
+        } else {
+            setSelectedIds([...selectedIds, id]);
         }
     };
 
-    // Función para descargar la plantilla CSV
-    const handleDownloadTemplate = () => {
-        const headers = "Nombre,ApellidoPaterno,ApellidoMaterno,CURP,SSN,RFC,Calle,Colonia,NumExterior,NumInterior,CP,Localidad,Municipio,Estado,Email,Grupo,Sucursal,FecRelLaboral,Salario,SalarioCuotas,Contrato,RegimenContratacion,RiesgoPuesto,TipoJornada,Banco,CLABE,Periodicidad,Departamento,Puesto,NumEmpleado\n";
-        const blob = new Blob([headers], { type: 'text/csv;charset=utf-8;' });
+    // ==========================================
+    // Exportación a CSV
+    // ==========================================
+    const handleExportCSV = () => {
+        const selectedData = empleados.filter(emp => selectedIds.includes(emp.id));
+        if (selectedData.length === 0) return;
+
+        // Cabeceras del CSV
+        const headers = ['Num Empleado', 'Nombre Completo', 'RFC', 'CURP', 'NSS', 'Salario', 'Puesto', 'Departamento', 'Estado'];
+
+        // Formateo de las filas
+        const csvRows = selectedData.map(emp => [
+            emp.numEmpleado || '',
+            `"${emp.nombre} ${emp.apellidoPaterno} ${emp.apellidoMaterno || ''}"`.trim(),
+            emp.rfc || '',
+            emp.curp || '',
+            emp.nss || '',
+            emp.salario || 0,
+            `"${emp.puesto || ''}"`,
+            `"${emp.departamento || ''}"`,
+            emp.activo ? 'Activo' : 'Inactivo'
+        ]);
+
+        const csvContent = [headers.join(','), ...csvRows.map(row => row.join(','))].join('\n');
+
+        // Crear un Blob y forzar la descarga en el navegador
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
+        const link = document.createElement('a');
         link.href = url;
-        link.setAttribute("download", "PlantillaEmpleados.csv");
+        link.setAttribute('download', 'empleados_seleccionados.csv');
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     };
 
-    // Filtrado local
-    const empleadosFiltrados = empleados.filter(emp =>
-        emp.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        emp.rfc.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    if (loading) return <div className="p-6 text-center text-gray-600 font-medium">Cargando directorio...</div>;
+    if (error) return <div className="p-6 text-center text-red-500 font-medium">Error: {error}</div>;
 
     return (
-        <div className="p-6 bg-slate-50 min-h-screen">
-            <div className="max-w-7xl mx-auto">
-                <div className="mb-4">
-                    <Link href="/" className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-blue-600 transition-colors">
-                        <ArrowLeft size={18} />
-                        Regresar al Panel
+        <div className="p-6 max-w-7xl mx-auto">
+            {/* Header y Botonera Superior */}
+            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                <h1 className="text-2xl font-bold text-gray-800">Directorio de Empleados</h1>
+
+                <div className="flex flex-wrap gap-2">
+                    {/* 👇 NUEVO BOTÓN DE REGRESO 👇 */}
+                    <Link href="/" className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded font-medium transition-colors">
+                        ← Panel
+                    </Link>
+                    <button
+                        onClick={handleExportCSV}
+                        disabled={selectedIds.length === 0}
+                        className={`px-4 py-2 rounded text-white font-medium transition-colors ${selectedIds.length === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+                    >
+                        Descargar CSV ({selectedIds.length})
+                    </button>
+
+                    <Link href="/nomina/facturacion-masiva" className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium transition-colors">
+                        Ir a Timbrado Masivo
+                    </Link>
+
+                    <Link href="/empleados/nuevo" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors">
+                        + Nuevo Empleado
                     </Link>
                 </div>
+            </div>
 
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                    {/* Controles */}
-                    <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-50">
-                        <div className="flex items-center gap-2 w-full md:w-auto">
-                            <div className="relative flex-1 md:w-72">
+            {/* Tabla de Empleados */}
+            <div className="bg-white shadow rounded-lg overflow-x-auto border border-gray-200">
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-6 py-3 text-left">
                                 <input
-                                    type="text"
-                                    placeholder="Buscar empleado por nombre o RFC..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full pl-3 pr-10 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    type="checkbox"
+                                    onChange={handleSelectAll}
+                                    checked={selectedIds.length === currentEmpleados.length && currentEmpleados.length > 0}
+                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                                 />
-                                <button className="absolute right-0 top-0 bottom-0 bg-blue-600 hover:bg-blue-700 text-white px-3 rounded-r-xl transition-colors">
-                                    <Search size={18} />
-                                </button>
-                            </div>
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">No. Emp</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Nombre</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">RFC / CURP</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Puesto</th>
+                            <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Salario Diario</th>
+                            <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                        {currentEmpleados.map(emp => (
+                            <tr key={emp.id} className="hover:bg-blue-50 transition-colors">
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedIds.includes(emp.id)}
+                                        onChange={() => handleSelect(emp.id)}
+                                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                    />
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-medium">
+                                    {emp.numEmpleado}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
+                                    {emp.nombre} {emp.apellidoPaterno}
+                                    <div className="text-xs font-normal text-gray-400">{emp.email || 'Sin correo'}</div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                    <div className="font-semibold">{emp.rfc}</div>
+                                    <div className="text-xs">{emp.curp}</div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                    {emp.puesto || 'N/A'}
+                                    <div className="text-xs text-gray-400">{emp.departamento || 'Sin departamento'}</div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-green-700">
+                                    ${Number(emp.salario).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                                    <Link
+                                        href={`/empleados/${emp.id}/editar`}
+                                        className="text-blue-600 hover:text-blue-800 font-bold underline underline-offset-2"
+                                    >
+                                        Editar
+                                    </Link>
+                                </td>
+                            </tr>
+                        ))}
+                        {currentEmpleados.length === 0 && (
+                            <tr>
+                                <td colSpan={7} className="px-6 py-12 text-center text-gray-500 font-medium">
+                                    No hay empleados registrados en el sistema.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
 
-                            {/* EL BOTÓN AHORA REDIRIGE AL FORMULARIO */}
-                            <Link href="/empleados/nuevo" className="flex items-center gap-2 bg-white border border-blue-600 text-blue-600 hover:bg-blue-50 font-bold text-sm ml-4 px-4 py-2.5 rounded-xl transition-colors">
-                                <Plus size={18} />
-                                Agregar Empleado
-                            </Link>
-                        </div>
-
-                        <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-                            {/* BOTÓN DESCARGAR PLANTILLA AGREGADO */}
-                            <button
-                                onClick={handleDownloadTemplate}
-                                className="flex items-center gap-1 text-slate-600 hover:text-slate-900 font-bold text-sm bg-white border border-slate-200 px-4 py-2.5 rounded-xl transition-colors whitespace-nowrap"
-                            >
-                                <Download size={18} />
-                                Descargar Plantilla
-                            </button>
-
-                            <input
-                                type="file"
-                                accept=".csv"
-                                className="hidden"
-                                ref={fileInputRef}
-                                onChange={handleFileUpload}
-                            />
-
-                            <button
-                                onClick={() => fileInputRef.current?.click()}
-                                disabled={isUploading}
-                                className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-bold text-sm bg-blue-50 px-4 py-2.5 rounded-xl transition-colors whitespace-nowrap"
-                            >
-                                {isUploading ? <Loader2 size={18} className="animate-spin" /> : <UploadCloud size={18} />}
-                                {isUploading ? "Procesando..." : "Carga masiva (CSV)"}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Tabla de Empleados */}
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                            <thead className="text-xs text-slate-500 uppercase bg-white border-b border-slate-100">
-                                <tr>
-                                    <th className="px-6 py-4 font-bold">Puesto</th>
-                                    <th className="px-6 py-4 font-bold">Nombre del empleado</th>
-                                    <th className="px-6 py-4 font-bold">RFC</th>
-                                    <th className="px-6 py-4 font-bold">No. Seguridad Social</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {loading ? (
-                                    <tr>
-                                        <td colSpan={4} className="px-6 py-10 text-center text-slate-500">
-                                            <Loader2 size={32} className="animate-spin mx-auto mb-2 text-blue-500" />
-                                            Cargando empleados...
-                                        </td>
-                                    </tr>
-                                ) : empleadosFiltrados.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={4} className="px-6 py-20 text-center">
-                                            <div className="flex flex-col items-center justify-center text-slate-400">
-                                                <Users size={48} className="mb-4 opacity-50" />
-                                                <p className="text-lg text-slate-600">Aún no cuenta con <span className="font-bold text-slate-800">Empleados</span> registrados,</p>
-                                                <p className="text-sm mt-1">para agregar de click en el botón <span className="font-bold">Agregar Empleado</span> o usa la carga masiva.</p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    empleadosFiltrados.map((emp, index) => (
-                                        <tr key={index} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                                            <td className="px-6 py-4 font-medium">{emp.puesto || 'N/A'}</td>
-                                            <td className="px-6 py-4 font-bold text-slate-900">{emp.nombre} {emp.apellidoPaterno} {emp.apellidoMaterno}</td>
-                                            <td className="px-6 py-4">{emp.rfc}</td>
-                                            <td className="px-6 py-4">{emp.nss || 'N/A'}</td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
+            {/* Controles de Paginación */}
+            {totalPages > 1 && (
+                <div className="flex justify-between items-center mt-6 bg-white p-4 rounded-lg shadow border border-gray-200">
+                    <span className="text-sm text-gray-600 font-medium">
+                        Mostrando del <span className="font-bold">{indexOfFirstItem + 1}</span> al <span className="font-bold">{Math.min(indexOfLastItem, empleados.length)}</span> de {empleados.length}
+                    </span>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                            disabled={currentPage === 1}
+                            className="px-4 py-2 border rounded font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            Anterior
+                        </button>
+                        <button
+                            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                            disabled={currentPage === totalPages}
+                            className="px-4 py-2 border rounded font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            Siguiente
+                        </button>
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 }
