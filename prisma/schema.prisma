@@ -325,3 +325,75 @@ model SolicitudSat {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
+
+// ==========================================
+// 8. Módulo de Nómina (Empleados y Recibos)
+// ==========================================
+
+model Empleado {
+  id                  String   @id @default(uuid())
+  nombre              String
+  apellidoPaterno     String
+  apellidoMaterno     String?
+  curp                String   @unique
+  nss                 String?
+  rfc                 String   @unique
+  calle               String?
+  colonia             String?
+  numExterior         String?
+  numInterior         String?
+  cp                  String
+  localidad           String?
+  municipio           String?
+  estado              String?
+  email               String?
+
+  // Datos Laborales
+  grupo               String?
+  sucursal            String?
+  fechaRelacionLaboral DateTime
+  salario             Decimal  @db.Decimal(15, 2)
+  salarioCuotas       Decimal  @db.Decimal(15, 2) // Salario Diario Integrado
+  contrato            String   // Catálogo SAT: 01, 02...
+  regimenContratacion String   // Catálogo SAT: 02, 03...
+  riesgoPuesto        String   // Catálogo SAT: 1, 2, 3, 4, 5
+  tipoJornada         String   // Catálogo SAT: 01, 02...
+  periodicidad        String   // Catálogo SAT: 04 (Quincenal), etc.
+  departamento        String?
+  puesto              String?
+  numEmpleado         String   @unique
+  banco               String?  // Catálogo SAT Bancos
+  clabe               String?
+
+  activo              Boolean  @default(true)
+  recibos             ReciboNomina[]
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model ReciboNomina {
+  id                  String   @id @default(uuid())
+  empleadoId          String
+  empleado            Empleado @relation(fields: [empleadoId], references: [id])
+  
+  // Datos del Recibo
+  fechaPago           DateTime
+  fechaInicialPago    DateTime
+  fechaFinalPago      DateTime
+  numDiasPagados      Decimal  @db.Decimal(5, 2)
+  
+  // Totales
+  totalPercepciones   Decimal  @default(0) @db.Decimal(15, 2)
+  totalDeducciones    Decimal  @default(0) @db.Decimal(15, 2)
+  totalNeto           Decimal  @default(0) @db.Decimal(15, 2)
+  
+  // CFDI
+  uuid                String?  @unique
+  xmlTimbrado         String?
+  estado              String   @default("BORRADOR") // TIMBRADO, CANCELADO, ERROR
+  mensajeError        String?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
