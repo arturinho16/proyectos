@@ -49,8 +49,13 @@ export async function POST(req: Request) {
         // 4. Iterar sobre cada recibo para firmar y timbrar
         for (const recibo of recibos) {
             try {
-                // A) Generar el XML crudo (la función que hicimos en el Paso 2)
+                // A) Generar el XML crudo
                 const xmlUnsigned = generarXMLNomina(recibo, recibo.empleado, noCertificado, certificadoB64);
+
+                // 👇 ESTO IMPRIMIRÁ EL XML EN TU TERMINAL 👇
+                console.log(`\n=== 🛠️ XML A TIMBRAR (Empleado: ${recibo.empleado.nombre}) ===`);
+                console.log(xmlUnsigned);
+                console.log(`==================================================================\n`);
 
                 // B) Generar Cadena Original y Sello Criptográfico
                 const cadenaOriginal = await buildCadenaOriginal(xmlUnsigned);
@@ -73,7 +78,7 @@ export async function POST(req: Request) {
                 if (!stampResult || !stampResult.UUID) {
                     const incidencias = stampResult?.Incidencias?.Incidencia;
                     const incidencia = Array.isArray(incidencias) ? incidencias[0] : incidencias;
-                    throw new Error(`Rechazo SAT/Finkok: ${incidencia?.MensajeIncidencia || stampResult?.CodEstatus || 'Error desconocido'}`);
+                    throw new Error(`Finkok/SAT: ${incidencia?.MensajeIncidencia || stampResult?.CodEstatus || 'Error desconocido'}`);
                 }
 
                 // F) Limpieza del XML de retorno (Finkok a veces devuelve Base64 o caracteres invisibles BOM)
