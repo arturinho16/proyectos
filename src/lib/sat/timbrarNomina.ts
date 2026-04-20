@@ -32,7 +32,7 @@ export function generarXMLNomina(
             Serie: 'NOM',
             Folio: folioCorto.toUpperCase(),
             Fecha: safeDateTime(datosRecibo.fechaPago),
-            Sello: '',
+            Sello: '___SELLO_AQUI___',
             NoCertificado: noCertificado,
             Certificado: certificadoB64,
             SubTotal: datosRecibo.totalPercepciones.toFixed(2),

@@ -49,20 +49,22 @@ export async function POST(req: Request) {
         // 4. Iterar sobre cada recibo para firmar y timbrar
         for (const recibo of recibos) {
             try {
-                // A) Generar el XML crudo
+                // A) Generar el XML crudo con el Placeholder
                 const xmlUnsigned = generarXMLNomina(recibo, recibo.empleado, noCertificado, certificadoB64);
-
-                // 👇 ESTO IMPRIMIRÁ EL XML EN TU TERMINAL 👇
-                console.log(`\n=== 🛠️ XML A TIMBRAR (Empleado: ${recibo.empleado.nombre}) ===`);
-                console.log(xmlUnsigned);
-                console.log(`==================================================================\n`);
 
                 // B) Generar Cadena Original y Sello Criptográfico
                 const cadenaOriginal = await buildCadenaOriginal(xmlUnsigned);
                 const sello = generarSello(cadenaOriginal, keyPem);
 
-                // C) Inyectar el sello en el nodo principal del XML
-                const xmlFirmado = xmlUnsigned.replace('Sello=""', `Sello="${sello}"`);
+                // C) Inyectar el sello real reemplazando el placeholder
+                const xmlFirmado = xmlUnsigned.replace('___SELLO_AQUI___', sello);
+
+                // 👇 RADIOGRAFÍA COMPLETA EN CONSOLA 👇
+                console.log(`\n========== EMPLEADO: ${recibo.empleado.nombre} ==========`);
+                console.log(`\n[1] CADENA ORIGINAL:\n${cadenaOriginal}`);
+                console.log(`\n[2] SELLO GENERADO:\n${sello}`);
+                console.log(`\n[3] XML FINAL A FINKOK:\n${xmlFirmado}`);
+                console.log(`=====================================================\n`);
 
                 // D) Petición a Finkok
                 const xmlBase64 = Buffer.from(xmlFirmado, 'utf-8').toString('base64');
@@ -78,7 +80,7 @@ export async function POST(req: Request) {
                 if (!stampResult || !stampResult.UUID) {
                     const incidencias = stampResult?.Incidencias?.Incidencia;
                     const incidencia = Array.isArray(incidencias) ? incidencias[0] : incidencias;
-                    throw new Error(`Finkok/SAT: ${incidencia?.MensajeIncidencia || stampResult?.CodEstatus || 'Error desconocido'}`);
+                    throw new Error(`Rechazo Finkok/SAT: ${incidencia?.MensajeIncidencia || stampResult?.CodEstatus || 'Error desconocido'}`);
                 }
 
                 // F) Limpieza del XML de retorno (Finkok a veces devuelve Base64 o caracteres invisibles BOM)
