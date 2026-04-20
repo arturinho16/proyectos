@@ -3,7 +3,10 @@
   xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
   xmlns:xs="http://www.w3.org/2001/XMLSchema"
   xmlns:fn="http://www.w3.org/2005/xpath-functions"
-  xmlns:cfdi="http://www.sat.gob.mx/cfd/4">
+  xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
+  xmlns:nomina12="http://www.sat.gob.mx/nomina12">
+
+  <xsl:include href="http://www.sat.gob.mx/sitio_internet/cfd/nomina/nomina12.xslt"/>
 
   <xsl:output method="text" version="1.0" encoding="UTF-8" indent="no"/>
 
@@ -20,13 +23,9 @@
     <xsl:call-template name="Opcional"><xsl:with-param name="valor" select="@Serie"/></xsl:call-template>
     <xsl:call-template name="Opcional"><xsl:with-param name="valor" select="@Folio"/></xsl:call-template>
     <xsl:call-template name="Requerido"><xsl:with-param name="valor" select="@Fecha"/></xsl:call-template>
-    
     <xsl:call-template name="Opcional"><xsl:with-param name="valor" select="@FormaPago"/></xsl:call-template>
-    
     <xsl:call-template name="Requerido"><xsl:with-param name="valor" select="@NoCertificado"/></xsl:call-template>
-    
     <xsl:call-template name="Opcional"><xsl:with-param name="valor" select="@CondicionesDePago"/></xsl:call-template>
-    
     <xsl:call-template name="Requerido"><xsl:with-param name="valor" select="@SubTotal"/></xsl:call-template>
     <xsl:call-template name="Opcional"><xsl:with-param name="valor" select="@Descuento"/></xsl:call-template>
     <xsl:call-template name="Requerido"><xsl:with-param name="valor" select="@Moneda"/></xsl:call-template>
@@ -42,6 +41,8 @@
     <xsl:apply-templates select="cfdi:Receptor"/>
     <xsl:apply-templates select="cfdi:Conceptos/cfdi:Concepto"/>
     <xsl:apply-templates select="cfdi:Impuestos"/>
+    
+    <xsl:apply-templates select="cfdi:Complemento"/>
   </xsl:template>
 
   <xsl:template match="cfdi:Emisor">
@@ -96,7 +97,6 @@
   <xsl:template match="cfdi:Impuestos">
     <xsl:apply-templates select="cfdi:Retenciones/cfdi:Retencion"/>
     <xsl:call-template name="Opcional"><xsl:with-param name="valor" select="@TotalImpuestosRetenidos"/></xsl:call-template>
-    
     <xsl:apply-templates select="cfdi:Traslados/cfdi:Traslado"/>
     <xsl:call-template name="Opcional"><xsl:with-param name="valor" select="@TotalImpuestosTrasladados"/></xsl:call-template>
   </xsl:template>
