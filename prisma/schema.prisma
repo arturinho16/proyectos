@@ -331,99 +331,200 @@ model SolicitudSat {
 // ==========================================
 
 model Empleado {
-  id                  String   @id @default(uuid())
-  nombre              String
-  apellidoPaterno     String
-  apellidoMaterno     String?
-  curp                String   @unique
-  nss                 String?
-  rfc                 String   @unique
-  calle               String?
-  colonia             String?
-  numExterior         String?
-  numInterior         String?
-  cp                  String
-  localidad           String?
-  municipio           String?
-  estado              String?
-  email               String?
+  id              String  @id @default(uuid())
+  nombre          String
+  apellidoPaterno String
+  apellidoMaterno String?
+  curp            String  @unique
+  nss             String?
+  rfc             String  @unique
+  calle           String?
+  colonia         String?
+  numExterior     String?
+  numInterior     String?
+  cp              String
+  localidad       String?
+  municipio       String?
+  estado          String?
+  email           String?
 
   // Datos Laborales
-  grupo               String?
-  sucursal            String?
+  grupo                String?
+  sucursal             String?
   fechaRelacionLaboral DateTime
-  salario             Decimal  @db.Decimal(15, 2)
-  salarioCuotas       Decimal  @db.Decimal(15, 2) // Salario Diario Integrado
-  contrato            String   // Catálogo SAT: 01, 02...
-  regimenContratacion String   // Catálogo SAT: 02, 03...
-  riesgoPuesto        String   // Catálogo SAT: 1, 2, 3, 4, 5
-  tipoJornada         String   // Catálogo SAT: 01, 02...
-  periodicidad        String   // Catálogo SAT: 04 (Quincenal), etc.
-  departamento        String?
-  puesto              String?
-  numEmpleado         String   @unique
-  banco               String?  // Catálogo SAT Bancos
-  clabe               String?
+  salario              Decimal  @db.Decimal(15, 2)
+  salarioCuotas        Decimal  @db.Decimal(15, 2) // Salario Diario Integrado
+  contrato             String // Catálogo SAT: 01, 02...
+  regimenContratacion  String // Catálogo SAT: 02, 03...
+  riesgoPuesto         String // Catálogo SAT: 1, 2, 3, 4, 5
+  tipoJornada          String // Catálogo SAT: 01, 02...
+  periodicidad         String // Catálogo SAT: 04 (Quincenal), etc.
+  departamento         String?
+  puesto               String?
+  numEmpleado          String   @unique
+  banco                String? // Catálogo SAT Bancos
+  clabe                String?
 
-  activo              Boolean  @default(true)
-  recibos             ReciboNomina[]
+  activo  Boolean        @default(true)
+  recibos ReciboNomina[]
 
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model ReciboNomina {
-  id                  String   @id @default(uuid())
-  empleadoId          String
-  empleado            Empleado @relation(fields: [empleadoId], references: [id])
-  
-  // Fechas y periodo
-  fechaPago           DateTime
-  fechaInicialPago    DateTime
-  fechaFinalPago      DateTime
-  numDiasPagados      Decimal  @db.Decimal(5, 2)
-  
-  // Totales (Requeridos por CFDI)
-  totalPercepciones   Decimal  @default(0) @db.Decimal(15, 2)
-  totalDeducciones    Decimal  @default(0) @db.Decimal(15, 2)
-  totalOtrosPagos     Decimal  @default(0) @db.Decimal(15, 2) // Opcional, util si hay subsidio
-  totalNeto           Decimal  @default(0) @db.Decimal(15, 2)
-  
-  // Control de Timbrado
-  uuid                String?  @unique
-  xmlTimbrado         String?  @db.Text // Importante usar @db.Text para que quepa el XML completo
-  estado              String   @default("BORRADOR") // TIMBRADO, CANCELADO, ERROR
-  mensajeError        String?  @db.Text
-  
-  // Relaciones hacia el detalle del recibo
-  percepciones        NominaPercepcion[]
-  deducciones         NominaDeduccion[]
+  id         String   @id @default(uuid())
+  empleadoId String
+  empleado   Empleado @relation(fields: [empleadoId], references: [id])
 
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  // Fechas y periodo
+  fechaPago        DateTime
+  fechaInicialPago DateTime
+  fechaFinalPago   DateTime
+  numDiasPagados   Decimal  @db.Decimal(5, 2)
+
+  // Totales (Requeridos por CFDI)
+  totalPercepciones Decimal @default(0) @db.Decimal(15, 2)
+  totalDeducciones  Decimal @default(0) @db.Decimal(15, 2)
+  totalOtrosPagos   Decimal @default(0) @db.Decimal(15, 2) // Opcional, util si hay subsidio
+  totalNeto         Decimal @default(0) @db.Decimal(15, 2)
+
+  // Control de Timbrado
+  uuid         String? @unique
+  xmlTimbrado  String? @db.Text // Importante usar @db.Text para que quepa el XML completo
+  estado       String  @default("BORRADOR") // TIMBRADO, CANCELADO, ERROR
+  mensajeError String? @db.Text
+
+  // Relaciones hacia el detalle del recibo
+  percepciones      NominaPercepcion[]
+  deducciones       NominaDeduccion[]
+  aprobaciones      NominaAprobacion[]
+  registrosTimbrado RegistroTimbrado[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model NominaPercepcion {
-  id              String       @id @default(uuid())
-  reciboId        String
-  recibo          ReciboNomina @relation(fields: [reciboId], references: [id], onDelete: Cascade)
-  
-  tipoPercepcion  String       // Catálogo SAT c_TipoPercepcion (Ej. 001 - Sueldos)
-  clave           String       // Clave interna de tu empresa (Ej. SDO)
-  concepto        String       // Descripción libre (Ej. "Sueldo Quincenal")
-  
-  importeGravado  Decimal      @default(0) @db.Decimal(15, 2)
-  importeExento   Decimal      @default(0) @db.Decimal(15, 2)
+  id       String       @id @default(uuid())
+  reciboId String
+  recibo   ReciboNomina @relation(fields: [reciboId], references: [id], onDelete: Cascade)
+
+  tipoPercepcion String // Catálogo SAT c_TipoPercepcion (Ej. 001 - Sueldos)
+  clave          String // Clave interna de tu empresa (Ej. SDO)
+  concepto       String // Descripción libre (Ej. "Sueldo Quincenal")
+
+  importeGravado Decimal @default(0) @db.Decimal(15, 2)
+  importeExento  Decimal @default(0) @db.Decimal(15, 2)
 }
 
 model NominaDeduccion {
-  id              String       @id @default(uuid())
-  reciboId        String
-  recibo          ReciboNomina @relation(fields: [reciboId], references: [id], onDelete: Cascade)
-  
-  tipoDeduccion   String       // Catálogo SAT c_TipoDeduccion (Ej. 002 - ISR)
-  clave           String       // Clave interna (Ej. ISR01)
-  concepto        String       // Descripción libre (Ej. "Retención de ISR")
-  
-  importe         Decimal      @db.Decimal(15, 2)
+  id       String       @id @default(uuid())
+  reciboId String
+  recibo   ReciboNomina @relation(fields: [reciboId], references: [id], onDelete: Cascade)
+
+  tipoDeduccion String // Catálogo SAT c_TipoDeduccion (Ej. 002 - ISR)
+  clave         String // Clave interna (Ej. ISR01)
+  concepto      String // Descripción libre (Ej. "Retención de ISR")
+
+  importe Decimal @db.Decimal(15, 2)
+}
+
+model ConfiguracionFiscal {
+  id String @id @default(uuid())
+
+  // Datos obligatorios
+  rfc             String  @unique
+  razonSocial     String
+  nombreComercial String?
+  regimenFiscal   String
+  codigoPostal    String
+  pais            String  @default("MEX")
+  estado          String?
+  municipio       String?
+  colonia         String?
+  calle           String?
+  numeroExterior  String?
+  numeroInterior  String?
+  telefono        String?
+  email           String?
+
+  // Datos opcionales
+  sitioWeb           String?
+  logoUrl            String?
+  representanteLegal String?
+  registroPatronal   String?
+
+  // Certificados y PAC
+  csdNoCertificado      String?
+  csdCertificadoBase64  String? @db.Text
+  csdLlaveBase64        String? @db.Text
+  csdPasswordEncrypted  String?
+  fielCertificadoBase64 String? @db.Text
+  fielLlaveBase64       String? @db.Text
+  fielPasswordEncrypted String?
+
+  pacProveedor         String  @default("FINKOK")
+  pacUsuario           String?
+  pacPasswordEncrypted String?
+  pacAmbiente          String  @default("demo")
+  pacStampUrl          String?
+
+  // Control de timbres
+  folioNominaSerie   String @default("NOM")
+  folioNominaActual  Int    @default(1)
+  timbresContratados Int    @default(0)
+  timbresUsados      Int    @default(0)
+  timbresDisponibles Int    @default(0)
+
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model NominaAprobacion {
+  id             String       @id @default(uuid())
+  reciboNominaId String
+  reciboNomina   ReciboNomina @relation(fields: [reciboNominaId], references: [id], onDelete: Cascade)
+
+  estado         String    @default("PENDIENTE") // PENDIENTE, APROBADA, RECHAZADA
+  comentario     String?   @db.Text
+  aprobadoPor    String?
+  aprobadoEmail  String?
+  aprobadoEn     DateTime?
+  rechazadoPor   String?
+  rechazadoEmail String?
+  rechazadoEn    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([estado])
+  @@index([reciboNominaId])
+}
+
+model RegistroTimbrado {
+  id             String       @id @default(uuid())
+  reciboNominaId String
+  reciboNomina   ReciboNomina @relation(fields: [reciboNominaId], references: [id], onDelete: Cascade)
+
+  estatus         String    @default("PENDIENTE") // EXITOSO, FALLIDO, VALIDACION, PENDIENTE
+  pac             String    @default("FINKOK")
+  ambiente        String    @default("demo")
+  codigoError     String?
+  mensajeError    String?   @db.Text
+  xmlGenerado     String?   @db.Text
+  xmlTimbrado     String?   @db.Text
+  uuid            String?
+  acuseRaw        String?   @db.Text
+  requestPayload  String?   @db.Text
+  responsePayload String?   @db.Text
+  intentos        Int       @default(1)
+  timbradoEn      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([reciboNominaId])
+  @@index([estatus])
 }

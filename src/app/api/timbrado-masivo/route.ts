@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { generarXMLNomina } from '@/lib/sat/timbrarNomina';
+import { generarXMLNomina } from '@/lib/sat/timbrarNominaFinkok';
 import { buildCadenaOriginal } from '@/lib/sat/timbrar';
 import { getNoCertificado, getCertificadoBase64, keyToPem, generarSello } from '@/lib/sat/firmar';
 import * as soap from 'soap';
